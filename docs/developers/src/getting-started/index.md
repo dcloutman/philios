@@ -3,7 +3,7 @@
 ## Table of Contents
 Getting Started
 - [Directory Structure](getting-started/directory-structure.md)
-- Required Tools
+- [Required Tools](getting-started/required-tools.md)
 - AI Usage
   - Quick Start
   - Tickets
