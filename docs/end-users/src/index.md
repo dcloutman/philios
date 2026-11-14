@@ -1,0 +1,61 @@
+# Philios Language Documentation
+
+## Table of Contents
+- Installation
+  - Compilation
+  - Binaries
+    - Windows
+    - OS X
+    - Linux
+      - Ubuntu / Debian
+      - Red Hat
+- Quick Start
+  - Hello World
+  - Basic Program Structure
+  - Modules
+  - Functions
+  - Built-In Types
+    - Scalars
+    - Data Structures
+      - Array
+      - List
+      - Dictionary
+      - Set
+      - Tuple
+  - Classes and Objects
+  - Interfaces
+  - Mutable and Immutable Types
+  - Exceptions and Error Handling
+- Language Reference
+  - Keywords
+  - Statements
+    - `import`
+    - `from`
+    - `export`
+    - `export default`
+  - Functions
+    - Built-In
+      - `delete`
+      - `echo`
+      - `exists`
+      - Files
+        - `File` class
+        - `file_pass_through()`
+      - `get_module()`
+      - `get_this_module()`
+  - Classes
+    - Built-In
+      - `Array`
+      - `Dictionary`
+      - `File`
+      - `Function`
+      - `Float`
+      - `Integer`
+      - `String`
+      - `List`
+      - `Set`
+      - `Tuple`
+  - Core Modules
+    - `BinaryTree`
+    - `LinkedList`
+    - `Singleton` Interface
