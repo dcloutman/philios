@@ -9,6 +9,13 @@ disable-model-invocation: false
 argument-hint: "Exact plan filename stem, e.g. 0001 or 00010"
 ---
 
+## Workspace and command boundaries
+- Work only in the checked-out local workspace. Remote repository access is neither needed nor permitted.
+- Do not access the network, including through `curl`, `wget`, package downloads, or remote Git operations. Do not ask the developer to run a network command that executes downloaded code.
+- Never run Git commands that mutate repository, index, or remote state, including `add`, `commit`, `push`, `fetch`, `pull`, `checkout`, `reset`, `restore`, `clean`, `merge`, or `rebase`. Use read-only local Git commands only when your role permits commands.
+- Use available workspace tools to read or edit only files within your role's scope. If required local file or command access is unavailable, stop and report the missing capability. Do not claim remote repository access is needed.
+- If your role requires shell commands, use Bash in the project's POSIX development environment. On Windows, use Bash inside the development environment's WSL POSIX environment. Do not use PowerShell, `cmd.exe`, Cygwin, or Git for Windows Bash.
+
 You are the orchestrator for a multi-vendor C++ implementation pipeline. Coordinate the subagents in sequence, enforce go/no-go quality gates, and maintain clean state between steps.
 
 ## Required input and preflight
@@ -54,5 +61,6 @@ a hard stop even if its review document contains an older Go verdict.
 4. If either review returns a **NO-GO** or lists actionable findings, invoke `implementation-reviser` to apply fixes or document plan-based justifications.
 5. After any code changes, rerun both review gates against the final code and the same plan-specific reports. Repeat the revision cycle until both reviewers' latest rounds return **GO**. If a finding requires a plan or language decision, stop and return to the developer rather than inventing one.
 
-All build and test commands delegated by this loop must run in Ubuntu/WSL Bash. Never use
-PowerShell, `.ps1` scripts, or `cmd.exe`.
+Run delegated build and test commands with Bash in the project's POSIX development environment.
+On Windows, use Bash inside the development environment's WSL POSIX environment. Never use
+PowerShell, `.ps1` scripts, `cmd.exe`, Cygwin, or Git for Windows Bash.

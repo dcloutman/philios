@@ -4,6 +4,13 @@ Currently Writing Version: 0.0.1
 
 We are writing a hyper-fast, lightweight interpreter, in C++20, for a new programming language called Philios. Philios blends the expressive capabilities of PHP, Python, Java, and JavaScript/TypeScript while maintaining low memory consumption. The interpreter compiles to a minimalist, standalone native binary that runs from the command line.
 
+## Agent Pemissions
+- Unless otherwise specified, agents may make changes to this directory and subdirectory, as specified by the developer.
+- Agents may not execute mutating `git` commands, such as `git commit` or `git push`, `git fetch`, or `git pull`.
+- Agents may run non-mutating commands against the local codebase such as `git diff` and `git log`.
+- Agents are not granted access to the remote repository. Agents do not need access to the remote repository to plan or implement.
+- Agents may not use `wget`, `curl` or any other network access tool. Agents may ask users to run such commands, but may not require a user to run a network command that result in the immediate execution of downloaded code.
+
 ## Document Precedence
 * This file defines architecture and language-level implementation decisions. The C++ style guide, `.github/instructions/cpp-style-guide.instructions.md`, governs how C++ code is written. Follow both.
 * If they conflict, this file wins for architecture and language behavior, and the style guide wins for C++ coding practice. Report any conflict you find instead of silently choosing one.
@@ -30,7 +37,7 @@ Strictly adhere to Philios requirements. Do not introduce abstractions or workar
 We use AI-powered development. Developers write an initial plan for a feature in `/plans` and run the `/planning-loop` skill in chat. The planning-loop orchestrator delegates grilling to `plan-grill-me` and relays its questions to the developer one at a time. After each answer, it invokes the grill agent again with the exact answer and prior handoff state; the grill agent writes or appends the decision record only after the developer confirms its final summary. The orchestrator then coordinates plan composition and reviews. The developer reviews and revises the approved plan, if necessary, before explicitly starting the `/implementation-loop`. That loop implements the code. The developer then reviews the code, compiles it, and manually debugs it as necessary.
 
 ## Development Environment
-We assume that developers are working in a POSIX environment and that `bash` is available to run commands. We do not execute PowerShell commands, or support bare-metal Windows development. Windows users can and should develop in WSL.
+We assume that developers are working in a POSIX environment and that `bash` is available to run commands. macOS and Linux users should use the Bash environment native to their development system. Bare-metal Windows development is not supported. Windows users must use Bash inside the development environment's WSL POSIX environment. Do not use PowerShell, `cmd.exe`, Cygwin, or Git for Windows Bash.
 
 ## Code Generation Quality Guardrails
 * Write explicit, type-safe, idiomatic C++20. Do not use generic macros. Raw pointers must never own memory; non-owning use is limited to what the style guide permits.
