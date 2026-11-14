@@ -1,6 +1,6 @@
 # Philios
 
-Philios is a fully typed, interpreted, fully scripted programming language.
+Philios is a fully typed, interpreted programming language.
 
 ## Features
 - Types are enforced at runtime
@@ -28,7 +28,7 @@ Philios is a fully typed, interpreted, fully scripted programming language.
 
 ## Directories
 - `src`: The interpreter source code, make file, etc.
-- ``docs`: Language rules, developer documentation, example projects.
+- `docs`: Language rules, developer documentation, example projects.
 - `bin`: The target directory for the resulting binary.
 
 (c) 2026 David Cloutman
