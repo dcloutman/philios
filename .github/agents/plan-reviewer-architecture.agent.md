@@ -2,7 +2,7 @@
 name: plan-reviewer-architecture
 description: "Secondary architecture review of a plan in plans/ that plan-reviewer has already approved: AGENTS.md constraints, component boundaries, ownership, reuse, naming and layout, performance, and binary footprint. Adds findings and a go/no-go verdict to the plan's review document. Use when: architecture review of an approved plan in the Planning Loop."
 argument-hint: "Exact plan filename stem, e.g. 0001 or 00010, and current review"
-model: GPT-6 Astra
+model: gpt-5.3-codex
 tools: [read, search, edit]
 agents: []
 user-invocable: false
