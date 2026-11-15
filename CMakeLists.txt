@@ -11,6 +11,12 @@ option(PHILIOS_SANITIZE "Enable ASan+UBSan" OFF)
 
 include(CTest)
 
+# Directory-level options apply only to targets defined after this point.
+if(PHILIOS_SANITIZE)
+  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+endif()
+
 file(GLOB_RECURSE PHILIOS_CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 list(FILTER PHILIOS_CORE_SOURCES EXCLUDE REGEX "/src/main\.cpp$")
@@ -23,11 +29,6 @@ add_executable(philios src/main.cpp)
 target_link_libraries(philios PRIVATE philios_core)
 target_include_directories(philios PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_options(philios PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
-
-if(PHILIOS_SANITIZE)
-  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
-  add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
-endif()
 
 if(PHILIOS_CLANG_TIDY)
   find_program(CLANG_TIDY_EXE NAMES clang-tidy REQUIRED)
