@@ -29,8 +29,8 @@ Strictly adhere to Philios requirements. Do not introduce abstractions or workar
 ## Data Type Blueprint
 * Everything is an object: Philios has no native primitives. Every type descends from an ancestral `Object` type.
 * Built-in immutable types: `String`, `Integer`, `UnsignedInteger`, and `Float` are `ImmutableObject` classes. Their internal C++ storage is a private implementation detail. Only the owning class may depend on it, so it can be replaced without breaking Philios code.
-* Integer overflow wraps: `Integer` and `UnsignedInteger` arithmetic wraps modulo 2^N (two's complement for `Integer`) at the type's fixed bit width. The bit widths are not yet specified.
-* Other numeric semantics are not yet specified: bit widths, division and remainder by zero, `min / -1`, shift behavior, mixed signed/unsigned/float operations, and conversions. Do not choose them during implementation. Implement them only after they are specified in `docs/language_rules.md` or an approved plan.
+* Integer overflow wraps: `Integer` and `UnsignedInteger` arithmetic wraps modulo 2^N (two's complement for `Integer`) at the type's fixed bit width. `Integer` is 64-bit signed (plan 0001, D2); the `UnsignedInteger` bit width is not yet specified.
+* Other numeric semantics are not yet specified: the `UnsignedInteger` bit width, division and remainder by zero, `min / -1`, shift behavior, mixed signed/unsigned/float operations, and conversions. Do not choose them during implementation. Implement them only after they are specified in `docs/language_rules.md` or an approved plan.
 * Callables: Anonymous functions and classes are deferred until v0.1.0. Named standalone functions and closures capture their environment chain via `closureEnv`.
 * Dynamic Objects: Instance fields are stored in a map paired with an owning pointer to the class blueprint (`CustomClass`). Field iteration order is an open decision (see below).
 
@@ -53,18 +53,18 @@ These are project-wide contracts. Do not resolve them inside an implementation. 
 
 | Decision | Needed by | Interim default |
 |---|---|---|
-| Remaining numeric semantics (bit widths and the other items in Data Type Blueprint; overflow wrapping is decided) | Before implementing numeric operations | None; do not implement |
+| Remaining numeric semantics (the `UnsignedInteger` bit width and the other items in Data Type Blueprint; overflow wrapping and the 64-bit signed `Integer` width are decided) | Before implementing numeric operations | None; do not implement |
 | Reclaiming reference cycles (closures that escape, self- or mutually-referencing instances) | v0.1.0 | Leaked cycles are acceptable only until process exit; never weaken an owning edge to avoid one |
-| Evaluator control flow for `return`/`break`/`continue` (result type vs. dedicated exceptions) | Before implementing statements | None; ask |
-| Evaluation order of operands, call arguments, and assignment targets | Before implementing expressions | None; ask. The C++ evaluator must sequence evaluation explicitly regardless of the choice (style guide, CERT EXP50) |
+| Evaluator control flow for `return`/`break`/`continue` (result type vs. dedicated exceptions) | Resolved | Resolved by plan 0001 (D5): a completion/result type; no control-flow exceptions |
+| Evaluation order of operands and assignment targets (call arguments are decided) | Before implementing expressions | Call arguments: resolved by plan 0001 (D6), strictly left to right. Operands and assignment targets: none; ask. The C++ evaluator must sequence evaluation explicitly regardless of the choice (style guide, CERT EXP50) |
 | Field and map iteration order visible to scripts | Before exposing iteration | Do not expose iteration order |
-| Source encoding and column units | Before the lexer | UTF-8 input; columns in bytes |
+| Source encoding and column units | Resolved | Resolved by plan 0001 (D8): UTF-8 input, malformed input rejected; columns in bytes |
 | Import path resolution and import cycles | Before modules | Reject import cycles with a language error |
 | Concurrency model | Before any threading | Single-threaded; no mutable state shared across threads |
 | Trust model, script capabilities, and resource limits | Before untrusted execution is supported | Scripts are trusted like `python`/`php` CLI scripts, but no input may crash the interpreter or cause undefined behavior |
-| Minimum compiler and standard library versions | Before the first build system | Use only C++20 features supported by current GCC, Clang, and MSVC releases |
-| Build system and test framework (the standard-library-only rule covers the shipped binary; may test-only dependencies exist?) | Before the first test | None; ask |
-| Recursion depth limit values (parser nesting, call depth) | Before the parser | Limits are named constants held by the execution context; the developer sets the values |
+| Minimum compiler and standard library versions | Resolved | Resolved by plan 0001 (D9): GCC 13+ on Linux x86-64 and `clang-tidy` 18+; other compilers best-effort |
+| Build system and test framework (the standard-library-only rule covers the shipped binary; may test-only dependencies exist?) | Resolved | Resolved by plan 0001 (D10, D49): CMake; Catch2 3.16.1 as a test-only library found with `find_package`, never linked into the binary; test-only dependencies are allowed |
+| Recursion depth limit values (parser nesting, call depth, evaluation depth) | Resolved | Resolved by plan 0001: parser nesting 256 and call depth 1,000 (D7); evaluation depth 10,000 (D24). Limits are named constants held by the execution context |
 
 ## Verification
 * Builds must be warning-free under `-Wall -Wextra -Wpedantic -Wconversion -Wshadow` (GCC/Clang) or `/W4` (MSVC).
