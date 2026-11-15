@@ -1,0 +1,3 @@
+Checks: '-*,cert-*,bugprone-*'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '^(src|tests/unit)/'
