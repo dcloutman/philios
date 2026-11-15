@@ -1,7 +1,7 @@
 # Plan 0001 — Architecture Decisions
 
 - **Plan ID:** `0001`
-- **Plan:** `plans/0001.md` (revision 7, decisions D1–D48)
+- **Plan:** `plans/0001.md` (revision 8, the developer patch for D49; decisions D1–D49)
 - **Review:** `plans/0001_review.md` (overall verdict Go; latest Plan, Architecture, and Security
   rounds all Go)
 - **Stage:** implementation-architect (stubs, preliminary unit tests, this record)
@@ -82,12 +82,25 @@ the generator may adjust them within the plan. §6 lists items this stage could 
 - A T-CLI-10 skip on Ubuntu 24.04 is acceptable (D48). In that case, code review checks
   `O_NOCTTY`.
 
-### Build and test (D9, D10, D33, D36)
+### Build and test (D9, D10, D33, D36, D49)
 - The toolchain is CMake 3.28, strict ISO C++20, GCC 13+, and `clang-tidy` 18+ with `cert-*` and
-  `bugprone-*`. The test framework is doctest, vendored as `third_party/doctest/doctest.h` and used
-  by tests only. `tests/unit/.clang-tidy` disables only `cert-err58-cpp`, as the test-only
-  exception. The T-CLI-10 test file is the only place that may call `_exit`, a test-only ERR50
-  exception.
+  `bugprone-*`.
+- The test framework is Catch2 3.16.1 (D49, amending D10). It is a test-only library and a
+  developer prerequisite. The build finds it with `find_package(Catch2 3.16.1 EXACT REQUIRED)` and
+  links `Catch2::Catch2WithMain` to `philios_tests` only. Catch2 is never vendored or fetched (no
+  `FetchContent`), and `philios` never links it. `Catch2::Catch2WithMain` supplies the test
+  program's `main`, so there is no project test `main`. Test sources include Catch2 through its own
+  headers, for example `<catch2/catch_test_macros.hpp>`. The imported target's include directories
+  are `SYSTEM` and reach `philios_tests` only.
+- `ctest` entries are registered explicitly with `add_test`, not with `catch_discover_tests`.
+- `tests/unit/.clang-tidy` disables only `cert-err58-cpp`. This is the D36 test-only exception for
+  Catch2's static `TEST_CASE` registration.
+- The T-CLI-10 test case is named exactly `T-CLI-10 terminal device main.phil`. The CMake variable
+  `PHILIOS_TCLI10_TEST_CASE` holds that name. The dedicated entry passes the name as a Catch2 test
+  spec, and the main entry passes it prefixed with `~`. Catch2 fails a run that executes no test
+  case, so no entry passes `--allow-running-no-tests`. T-BUILD-7's `WILL_FAIL` entry checks this
+  behavior.
+- The T-CLI-10 test file is the only place that may call `_exit`, a test-only ERR50 exception.
 
 ## 2. Trade-offs the plan records
 | Decision | Trade-off |
@@ -140,8 +153,8 @@ I preserved both files unchanged. Assessment against plan task 2 and §4:
     `TODO(plan 0001 task N)`.
   - `evaluate.cpp` is exactly the task 6 placeholder.
   - `main.cpp` is the complete §4 wiring.
-- `tests/unit/`:
-  - `test_main.cpp`
+- `tests/unit/` (an earlier run of this stage also created `test_main.cpp`, a doctest entry point;
+  §4a records why it was deleted):
   - `support/` — `ast_builders`, `source_pipeline`, `stderr_capture` (each `.hpp/.cpp`)
   - `common/errors_test.cpp` (T-SEC-7)
   - `cli/` — `cli_test.cpp` (T-SEC-8), `source_file_test.cpp` (T-CLI-8, T-CLI-9),
@@ -158,6 +171,27 @@ I preserved both files unchanged. Assessment against plan task 2 and §4:
   - `runtime/evaluator/module_test.cpp` (T-OWN-1, T-OWN-2, T-OWN-5 module)
   - `runtime/evaluator/evaluate_test.cpp` (T-FN-1 unit, T-FN-4, T-FN-6, T-FN-8 unit,
     T-NULL-1, T-NULL-4(b), T-DECL-8, T-SEC-6)
+
+## 4a. Conversion of the partial work from doctest to Catch2 (D49, plan §8)
+The earlier runs of this stage wrote the tests for doctest. The files listed in §3 and §4 were kept
+and converted, as plan §8 requires. None was discarded.
+- I deleted `tests/unit/test_main.cpp`, which defined `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN`.
+  `Catch2::Catch2WithMain` now supplies the test program's `main`.
+- In all 14 test files, I replaced `#include <doctest/doctest.h>` with
+  `#include <catch2/catch_test_macros.hpp>`. The include stays in the same position, between the
+  project headers and the standard library headers.
+- I changed the 38 uses of `SUBCASE` to `SECTION`. These were in `lexer_test.cpp`,
+  `evaluate_test.cpp`, `module_test.cpp`, and `source_file_test.cpp`.
+- I changed the one `CHECK_MESSAGE` in `terminal_device_test.cpp` to `INFO(message)` followed by
+  `CHECK(condition)`.
+- `CHECK`, `CHECK_FALSE`, `REQUIRE`, `REQUIRE_FALSE`, `CHECK_NOTHROW`, `CHECK_THROWS_AS`, and
+  `FAIL_CHECK` have the same meaning in both frameworks, so they did not change.
+- I changed the two comments in `terminal_device_test.cpp` that named doctest, the `_exit`
+  exception and the child's "never calls" note, so that they name Catch2. That file had no D36
+  comment. The only one was in the deleted `test_main.cpp`.
+- No test logic, test name, or `src/` file changed.
+- No file outside `plans/` names doctest, includes a doctest header, or uses a `DOCTEST_` macro.
+  The plan's history (§11, §12) and the grill record keep their doctest references, as §8 allows.
 
 ## 5. Interface shapes the stubs introduce (not architecture decisions)
 The plan names these components but not every signature. The stubs chose the following shapes,
@@ -183,19 +217,23 @@ and the generator may revise any of them within the plan:
   const CallExpr& callSite)`. `callSite` supplies the error locations.
 - `runMain(ExecutionContext&, const Module&)`.
 - `String::contentEquals`, which lets T-FN-1 check content without exposing storage.
-- Tests include doctest as `<doctest/doctest.h>`, so `third_party/` must be the `SYSTEM` include
-  directory.
+- Tests include Catch2 as `<catch2/catch_test_macros.hpp>`, which is the header plan §7 gives as
+  an example. Any file that needs more Catch2 facilities includes their own Catch2 headers.
 
 ## 6. Open items for the developer and the generator
-1. **Blocking: doctest is not available locally, and the plan does not pin a release.** Plan
-   §7 requires `third_party/doctest/doctest.h` "at a pinned release" with its MIT `LICENSE`.
-   Neither file exists, and network access is forbidden for agents. The developer must choose the
-   doctest release and vendor both files. T-BUILD-7's zero-test `FAIL_REGULAR_EXPRESSION` must be
-   checked against that release. Until then the unit tests cannot be built or run.
+1. **No blockers.** D49 resolved the earlier blocker about the missing doctest release. Catch2
+   3.16.1 is installed under `/usr/local`, and `Catch2ConfigVersion.cmake` reports
+   `PACKAGE_VERSION "3.16.1"`, so `find_package(Catch2 3.16.1 EXACT REQUIRED)` can find it. No
+   agent downloaded or installed Catch2.
 2. **Generator work this stage left untouched (plan task 1 and task 2 infrastructure):**
    - the AGENTS.md and documentation updates (§6, D46)
-   - `CMakeLists.txt`. The current placeholder references nonexistent files and Catch2 via
-     FetchContent, and task 2 replaces it.
+   - `CMakeLists.txt`. Task 2 replaces the current placeholder. That placeholder already calls
+     `find_package(Catch2 3.16.1 EXACT REQUIRED)`, but the rest does not match the plan:
+     - It requires CMake 3.16, not 3.28.
+     - The project is named `my-lang`, not `philios`.
+     - It lists `src/lexer.cpp`, `src/parser.cpp`, and `tests/test_lexer.cpp`, which do not exist.
+     - It uses a `PUBLIC include` directory.
+     - It calls `catch_discover_tests` instead of explicit `add_test` entries.
    - `.clang-tidy` and `tests/unit/.clang-tidy`
    - the CLI driver `tests/cli/run_case.cmake` and every CLI golden case
    - the build probes `tests/build/*` (T-BUILD-1 to T-BUILD-7)
@@ -209,6 +247,22 @@ and the generator may revise any of them within the plan:
 4. **Expected preliminary failures:** every stub-backed test fails until the generator implements
    its task. Until task 6, the T-OWN-4 structures recurse during destruction, so an unimplemented
    build may crash on those tests instead of reporting a failure.
+5. **The preliminary tests are not yet `clang-tidy` clean (generator, before T-BUILD-1).** These
+   diagnostics were already in the test code before the conversion. The conversion did not
+   introduce them. With `cert-*` and `bugprone-*` enabled and `cert-err58-cpp` disabled (the D36
+   test configuration), `clang-tidy` 18.1.3 reports these diagnostics in `tests/unit/`:
+   - **`bugprone-unchecked-optional-access`:** about 55 sites in `lexer_test.cpp`,
+     `evaluate_test.cpp`, `environment_test.cpp`, `module_test.cpp`, `parser_test.cpp`, and
+     `integer_literal_test.cpp`. The check does not treat a preceding `REQUIRE(opt)` as a guard.
+   - **`bugprone-unused-local-non-trivial-variable`:** three `[[maybe_unused]]` locals that only
+     exist to trigger a throw. They are in `source_file_test.cpp` (lines 94 and 113) and
+     `terminal_device_test.cpp` (line 202).
+   - **`bugprone-easily-swappable-parameters`:** `withLineBreaks` in `lexer_test.cpp`.
+
+   Plan §7 requires a clean build, and any suppression needs a comment that cites the rule. The
+   plan does not specify how to fix these sites, so this record does not choose a fix. The
+   generator resolves them when it adds `.clang-tidy` and turns on `PHILIOS_CLANG_TIDY`. The
+   `src/` files have no diagnostics.
 
 ## 7. Verification at this stage
 - Every `src/**/*.cpp` passed `g++ 13.3 -std=c++20 -Wall -Wextra -Wpedantic -Wconversion -Wshadow
@@ -216,7 +270,32 @@ and the generator may revise any of them within the plan:
 - All `src/` sources linked into `/dev/null`, which confirms that every referenced stub has a
   definition.
 - `clang-tidy 18.1.3 -checks='-*,cert-*,bugprone-*'` reported no diagnostics on any `src/` file.
-- The test sources were checked with `-fsyntax-only` and the same warning flags. The doctest
-  include was removed through a pipe, and command-line macros stood in for the doctest macros. All
-  17 test translation units compiled with no warnings. This checks syntax and types only; no test
-  has been built or run.
+- After the D49 conversion (2026-11-14), these checks ran against the installed Catch2 3.16.1
+  headers. No stand-in macros were used.
+  - Every `src/**/*.cpp` file and all 17 test translation units (14 test files and 3 `support/`
+    files) passed `g++ 13.3 -std=c++20 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Isrc
+    -Itests/unit -isystem /usr/local/include -fsyntax-only` with no warnings.
+  - Every `philios_core` source and every test source linked against `libCatch2Main.a` and
+    `libCatch2.a` into a temporary executable outside the repository. The executable was deleted
+    afterward.
+  - `--list-tests` showed 70 registered test cases. Catch2 rejects duplicate test names, so this
+    also confirms that no name is duplicated.
+  - The test spec `T-CLI-10 terminal device main.phil` matched exactly one test case.
+  - A spec that matches no test case exited with status 2. This matches the behavior that plan §7
+    and T-BUILD-7 rely on.
+  - No test was run. The stub-backed tests are expected to fail.
+- `clang-tidy` again reported no diagnostics on `src/`. For `tests/unit/`, see §6 item 5.
+- Re-verification run of this stage (2026-11-14, no file other than this record changed):
+  - `tests/unit/test_main.cpp` is absent. No file outside `plans/` names doctest or uses a
+    `DOCTEST_` macro, and no test uses `SUBCASE` or `CHECK_MESSAGE`. All 14 test files include
+    `<catch2/catch_test_macros.hpp>`.
+  - All 38 translation units (`src/` and `tests/unit/`) compiled with the plan's warning flags
+    and produced no warnings. `philios_tests` linked against Catch2 3.16.1, and `philios` linked
+    from `src/` alone. Both executables were built in a temporary directory outside the
+    repository and deleted afterward.
+  - `--list-tests` reported 70 test cases. The T-CLI-10 spec matched exactly 1, and a spec that
+    matches nothing exited with status 2.
+  - `clang-tidy` (`-*,cert-*,bugprone-*`) reported 0 diagnostics on `src/`.
+  - No file under `src/` includes `fcntl.h`, `unistd.h`, `stat.h`, or `syscall.h`. No file under
+    `src/frontend/` includes `runtime/` or `analysis/`. No file under `src/runtime/object_model/`
+    includes `runtime/evaluator/`. No include uses `..`.
