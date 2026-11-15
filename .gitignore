@@ -18,6 +18,10 @@ Desktop.ini
 $RECYCLE.BIN/
 *.lnk
 
+
+# AI Slop
+/build*
+
 # Generated binaries
 /bin/**
 !/bin/.gitkeep
