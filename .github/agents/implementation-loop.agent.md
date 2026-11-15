@@ -2,7 +2,7 @@
 name: implementation-loop
 description: Orchestrates the multi-vendor C++ implementation pipeline across architect, generator, reviewer, security-review, and reviser subagents.
 model: ['Claude Sonnet 4.6', 'GPT-5.6 Terra']
-tools: ['agent', 'read', 'search', 'todo']
+tools: ['agent', 'read', 'search', 'execute', 'todo']
 agents: ['implementation-architect', 'implementation-generator', 'implementation-reviewer', 'implementation-security-review', 'implementation-reviser']
 user-invocable: true
 disable-model-invocation: false
@@ -26,7 +26,7 @@ for it before proceeding. Read `plans/<plan-id>.md` and `plans/<plan-id>_review.
 `docs/language_rules.md`, and `.github/instructions/cpp-style-guide.instructions.md`.
 
 Before proceeding, verify that `plans/<plan-id>.md` and `plans/<plan-id>_review.md` are the exact
-paths associated with the supplied ID. Pass the exact `Plan ID` string, the expected plan path, and
+paths associated with the supplied ID. Pass the exact `plan-id` string, the expected plan path, and
 relevant artifact paths to each child agent. Require every child to verify those paths before
 working and return the same ID and plan path. If an identity is missing or differs, stop without
 continuing to another stage. Include the confirmed plan ID and path in your own status and final
@@ -49,17 +49,17 @@ Report the failed check and what is needed to proceed. A plan marked `Blocked on
 a hard stop even if its review document contains an older Go verdict.
 
 ## Workflow
-1. Invoke `implementation-architect` with the exact plan ID, plan path, and expected
+1. Invoke `implementation-architect` with the exact `plan-id`, plan path, and expected
    `plans/<plan-id>-architecture_decisions.md` path. Follow its specified files and directories; do
    not assume a layout that the plan does not require.
 2. Once stubs, preliminary unit tests, and the architecture decisions record are created, invoke
-   `implementation-generator` with the same plan identity and expected
+   `implementation-generator` with the same `plan-id` and expected
    `plans/<plan-id>-implementation_notes.md` path.
 3. Run `implementation-reviewer` and `implementation-security-review` against the completed
-   implementation, plan, and guidelines, passing the same plan identity and expected report paths:
+   implementation, plan, and guidelines, passing the same `plan-id` and expected report paths:
    `plans/<plan-id>-code_review.md` and `plans/<plan-id>-security_review.md`.
-4. If either review returns a **NO-GO** or lists actionable findings, invoke `implementation-reviser` to apply fixes or document plan-based justifications.
-5. After any code changes, rerun both review gates against the final code and the same plan-specific reports. Repeat the revision cycle until both reviewers' latest rounds return **GO**. If a finding requires a plan or language decision, stop and return to the developer rather than inventing one.
+4. If either review returns a **NO-GO** or lists actionable findings, invoke `implementation-reviser` with the same `plan-id` to apply fixes or document plan-based justifications.
+5. After any code changes, rerun both review gates against the final code and the same plan-specific reports, passing the same `plan-id`. Repeat the revision cycle until both reviewers' latest rounds return **GO**. If a finding requires a plan or language decision, stop and return to the developer rather than inventing one.
 
 Run delegated build and test commands with Bash in the project's POSIX development environment.
 On Windows, use Bash inside the development environment's WSL POSIX environment. Never use

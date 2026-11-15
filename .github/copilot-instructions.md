@@ -5,6 +5,7 @@
 - Never use CRLF (`\r\n`) line endings.
 
 ## English Language Guidelines
+- Every English statement has a subject, a verb, and terminates in a period.
 - Use lower ASCII characters for text where possible. Do not use smart quotes, em dashes, en dashes, or other non-ASCII punctuation. Use `-` to represent hyphens.
 - Minimize the use of abbreviations and acronyms. Spell out terms on first use.
 - Never write run-on sentences. Keep sentences clear and concise.
@@ -18,8 +19,10 @@
 - Use proper grammar, punctuation, and spelling.
 
 ## Commit Messages
-- Keep commit messages concise and focused on a giving a high-level summary of the changes made.
+- Run `git diff --staged` before composing commit messages.
+- Keep commit messages concise and focused on a giving a high-level summary of the changes made to the affected files. Avoid including implementation details or unrelated information.
 - Limit the subject line to 120 characters
 - Separate the subject line from the body with a blank line.
-- Write commit messages in the imperative mood.
-- Use past tense for the content of the commit message.
+- Write commit messages as a subject-omitted past-tense declarative sentence.
+- Use past tense for the content of the commit message **including the subject line**.
+- Subject lines must be complete sentences and end with correct punctuation.
