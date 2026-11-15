@@ -1,34 +1,55 @@
-cmake_minimum_required(VERSION 3.16)
-project(my-lang VERSION 0.1.0 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.28)
+project(philios LANGUAGES CXX)
 
-# Enforce strict C++20 standard across your project and Catch2
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# 1. Core interpreter library and CLI executable
-add_library(interpreter_core src/lexer.cpp src/parser.cpp)
-target_include_directories(interpreter_core PUBLIC include)
+option(PHILIOS_CLANG_TIDY "Enable clang-tidy during builds" OFF)
+option(PHILIOS_SANITIZE "Enable ASan+UBSan" OFF)
 
-add_executable(my-lang src/main.cpp)
-target_link_libraries(my-lang PRIVATE interpreter_core)
-
-# 2. Enable 'make test' with Catch2 (installed locally; never downloaded at configure time)
 include(CTest)
-if(BUILD_TESTING)
-  find_package(Catch2 3.16.1 EXACT REQUIRED)
 
-  add_executable(unit_tests tests/test_lexer.cpp)
-  target_link_libraries(unit_tests PRIVATE interpreter_core Catch2::Catch2WithMain)
+file(GLOB_RECURSE PHILIOS_CORE_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+list(FILTER PHILIOS_CORE_SOURCES EXCLUDE REGEX "/src/main\.cpp$")
 
-  include(Catch)
-  catch_discover_tests(unit_tests)
+add_library(philios_core ${PHILIOS_CORE_SOURCES})
+target_include_directories(philios_core PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_options(philios_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+
+add_executable(philios src/main.cpp)
+target_link_libraries(philios PRIVATE philios_core)
+target_include_directories(philios PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_options(philios PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+
+if(PHILIOS_SANITIZE)
+  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
 endif()
 
+if(PHILIOS_CLANG_TIDY)
+  find_program(CLANG_TIDY_EXE NAMES clang-tidy REQUIRED)
+  set_target_properties(philios_core PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+  set_target_properties(philios PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+endif()
 
-# 3. Enable 'sudo make install'
-include(GNUInstallDirs)
-install(TARGETS my-lang
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+if(BUILD_TESTING)
+  find_package(Catch2 3.16.1 EXACT REQUIRED)
+  file(GLOB_RECURSE PHILIOS_TEST_SOURCES CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/*.cpp")
 
+  add_executable(philios_tests ${PHILIOS_TEST_SOURCES})
+  target_link_libraries(philios_tests PRIVATE philios_core Catch2::Catch2WithMain)
+  target_include_directories(philios_tests PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/src"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit")
+  target_compile_options(philios_tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+
+  if(PHILIOS_CLANG_TIDY)
+    set_target_properties(philios_tests PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+  endif()
+
+  add_test(NAME philios_tests COMMAND philios_tests)
+endif()
