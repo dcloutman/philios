@@ -8,7 +8,7 @@
     - Plans
     - Planning Loop
     - Implementation Loop
-  - C++ Guidelines
+  - [C++ Guidelines](cpp-guidelines/index.md)
     - C++ Coding Guidelines
     - Testing
       - Unit Tests

@@ -12,5 +12,7 @@
 - **[Language-User Documentation](end-users/src/index.md)**: Documentation written for end users wanting to write software in Philios.
 - **[Language Development Documentation](developers/src/index.md):** Documentation written for software engineers wanting to contribute to the development of the Philios language or its interpreter and libraries.
 
+## Source Code
+The [Philios programming language source code](https://github.com/dcloutman/philios) is hosted on GitHub.
 
 (c) 2026 David Cloutman
