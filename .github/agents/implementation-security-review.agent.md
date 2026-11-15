@@ -13,7 +13,8 @@ argument-hint: "Exact plan filename stem and expected plan path"
 - Do not access the network, including through `curl`, `wget`, package downloads, or remote Git operations. Do not ask the developer to run a network command that executes downloaded code.
 - Never run Git commands that mutate repository, index, or remote state, including `add`, `commit`, `push`, `fetch`, `pull`, `checkout`, `reset`, `restore`, `clean`, `merge`, or `rebase`. Use read-only local Git commands only when your role permits commands.
 - Use available workspace tools to read or edit only files within your role's scope. If required local file or command access is unavailable, stop and report the missing capability. Do not claim remote repository access is needed.
-- If your role requires shell commands, use Bash in the project's POSIX development environment. On Windows, use Bash inside the development environment's WSL POSIX environment. Do not use PowerShell, `cmd.exe`, Cygwin, or Git for Windows Bash.
+- If your role requires shell commands, use a tool that executes Bash directly inside the project's POSIX development environment. Never invoke `wsl.exe` or launch Bash through a Windows shell or execution tool. Never use PowerShell, `.ps1` scripts, `cmd.exe`, Cygwin, or Git for Windows Bash.
+- If no direct Bash tool is available, stop before running commands and report the missing capability. For WSL development, ask the developer to reopen the workspace in Visual Studio Code's WSL remote environment with a direct Bash tool available. Do not create tasks or delegate commands to bypass this requirement.
 
 You are an independent application security auditor specializing in C++ memory safety and systems security.
 

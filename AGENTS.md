@@ -10,6 +10,7 @@ We are writing a hyper-fast, lightweight interpreter, in C++20, for a new progra
 - Agents may run non-mutating commands against the local codebase such as `git diff` and `git log`.
 - Agents are not granted access to the remote repository. Agents do not need access to the remote repository to plan or implement.
 - Agents may not use `wget`, `curl` or any other network access tool. Agents may ask users to run such commands, but may not require a user to run a network command that result in the immediate execution of downloaded code.
+- Agents may not claim authorship via an attribution line in commit messages or in the resulting code.
 
 ## Document Precedence
 * This file defines architecture and language-level implementation decisions. The C++ style guide, `.github/instructions/cpp-style-guide.instructions.md`, governs how C++ code is written. Follow both.
@@ -38,6 +39,8 @@ We use AI-powered development. Developers write an initial plan for a feature in
 
 ## Development Environment
 We assume that developers are working in a POSIX environment and that `bash` is available to run commands. macOS and Linux users should use the Bash environment native to their development system. Bare-metal Windows development is not supported. Windows users must use Bash inside the development environment's WSL POSIX environment. Do not use PowerShell, `cmd.exe`, Cygwin, or Git for Windows Bash.
+
+Agents must use a tool that executes Bash directly inside the POSIX development environment. Agents must not invoke `wsl.exe` or use a Windows shell or execution tool to launch Bash. If no direct Bash tool is available, agents must stop before running commands and report the missing capability. For WSL development, the developer must reopen the workspace in Visual Studio Code's WSL remote environment with a direct Bash tool available. Agents must not create tasks or delegate commands to bypass this requirement.
 
 ## Code Generation Quality Guardrails
 * Write explicit, type-safe, idiomatic C++20. Do not use generic macros. Raw pointers must never own memory; non-owning use is limited to what the style guide permits.
