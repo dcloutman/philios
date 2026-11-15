@@ -496,3 +496,30 @@ Developer answers are quoted exactly:
      of file in T-LEX-12.
 5. Next step chosen by the developer: one more plan-composer pass on the remaining findings, then
    re-review.
+
+## Session 2026-11-14 (follow-up 8: Catch2 replaces doctest)
+
+The developer gave this decision directly in the implementation session, after the
+implementation architect stopped because no pinned doctest release was available. The plan was at
+revision 7 (D1–D48). The developer's statements and selected options are quoted exactly:
+- "I chose Catch 2 as the unit testing tool. It's in the `CMakeLists.txt` file. The plan is wrong
+  when it says to use `doctest`. Revise the plan. It's steering us in the wrong direction."
+- How the build obtains Catch2: "Use a locally installed Catch2 through
+  `find_package(Catch2 3 REQUIRED)`. No configure-time download is needed."
+- Catch2 release to pin: "3.16.1".
+- Existing `CMakeLists.txt`: "Plan task 2 rewrites CMakeLists.txt to the planned targets and keeps
+  Catch2."
+- Process: "Planning is done. We're patching it and moving forward with implementation."
+
+### Decisions
+| ID | Question | Decision | Rationale | Plan section affected |
+|----|----------|----------|-----------|-----------------------|
+| D49 (amends D10, and the doctest-specific parts of D36 and D47) | Which unit test framework does plan 0001 use, and how does the build obtain it? | Catch2 3.16.1 replaces doctest. The build finds a locally installed Catch2 with `find_package(Catch2 3.16.1 EXACT REQUIRED)` and links `Catch2::Catch2WithMain` to `philios_tests` only. Nothing is vendored or fetched at configure time. Task 2 rewrites the placeholder `CMakeLists.txt` to the planned targets. The D36 `cert-err58-cpp` test-only suppression stays, citing Catch2's static test registration. T-CLI-10 selection uses Catch2 test specs. A zero-test run fails through Catch2's nonzero exit status, checked by T-BUILD-7. The plan is patched directly, without a new review round. | The developer already chose Catch2 in `CMakeLists.txt`. A local install keeps agents and builds offline, as AGENTS.md requires for agents. | Header, §2, §6, §7, §7.1, §8 tasks 2 and 4, §9, §12 |
+
+### Open Decisions from AGENTS.md
+| AGENTS.md entry | Decision, or "still open" | Requires an AGENTS.md update? |
+|-----------------|---------------------------|-------------------------------|
+| Build system and test framework | CMake; Catch2 3.16.1 as a test-only library; test-only dependencies allowed | Yes: task 1 records it as resolved, replacing the doctest wording |
+
+### Open Questions
+- None.

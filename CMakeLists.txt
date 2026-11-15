@@ -13,16 +13,10 @@ target_include_directories(interpreter_core PUBLIC include)
 add_executable(my-lang src/main.cpp)
 target_link_libraries(my-lang PRIVATE interpreter_core)
 
-# 2. Enable 'make test' with Catch2
+# 2. Enable 'make test' with Catch2 (installed locally; never downloaded at configure time)
 include(CTest)
 if(BUILD_TESTING)
-  include(FetchContent)
-  FetchContent_Declare(
-    Catch2
-    GIT_REPOSITORY https://github.com
-    GIT_TAG        v3.7.1
-  )
-  FetchContent_MakeAvailable(Catch2)
+  find_package(Catch2 3.16.1 EXACT REQUIRED)
 
   add_executable(unit_tests tests/test_lexer.cpp)
   target_link_libraries(unit_tests PRIVATE interpreter_core Catch2::Catch2WithMain)
@@ -30,6 +24,7 @@ if(BUILD_TESTING)
   include(Catch)
   catch_discover_tests(unit_tests)
 endif()
+
 
 # 3. Enable 'sudo make install'
 include(GNUInstallDirs)
