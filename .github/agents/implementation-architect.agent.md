@@ -2,7 +2,7 @@
 name: implementation-architect
 description: Creates plan-scoped C++ stubs, preliminary tests, and an architecture record containing only decisions approved by the plan.
 model: ['Claude Opus 5.5', 'Claude Opus 5']
-tools: ['read', 'search', 'edit', 'execute']
+tools: ['read', 'search', 'edit', 'create', 'apply_patch', 'execute']
 user-invocable: false
 disable-model-invocation: false
 argument-hint: "Exact plan filename stem and expected plan path"

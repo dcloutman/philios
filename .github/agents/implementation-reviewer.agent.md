@@ -2,7 +2,7 @@
 name: implementation-reviewer
 description: Audits C++ implementation against the plan, project coding guidelines, and implementation notes, producing a go/no-go code review report.
 model: ['GPT-5.6 Sol']
-tools: ['read', 'search', 'edit']
+tools: ['read', 'search', 'edit', 'create', 'apply_patch', 'execute']
 user-invocable: false
 disable-model-invocation: false
 argument-hint: "Exact plan filename stem and expected plan path"

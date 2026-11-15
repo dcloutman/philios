@@ -2,7 +2,7 @@
 name: implementation-security-review
 description: Performs an independent C++ security audit and writes a security review document with a go/no-go gate decision.
 model: ['Gemini 3.8 Flash']
-tools: ['read', 'search', 'edit']
+tools: ['read', 'search', 'edit', 'create', 'apply_patch']
 user-invocable: false
 disable-model-invocation: false
 argument-hint: "Exact plan filename stem and expected plan path"

@@ -3,7 +3,7 @@ name: plan-grill-me
 description: "Conduct a parent-mediated interview about a draft plan in plans/, returning one question per delegated call and recording confirmed decisions for plan-composer. Use when grilling or clarifying a Philios plan."
 argument-hint: "Exact plan filename stem, e.g. 0001 or 00010"
 model: gpt-5.3-codex
-tools: [read, search, edit]
+tools: [read, search, edit, create, apply_patch]
 agents: []
 user-invocable: false
 disable-model-invocation: false

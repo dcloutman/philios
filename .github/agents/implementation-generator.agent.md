@@ -2,7 +2,7 @@
 name: implementation-generator
 description: Implements only the approved C++ plan and architect stubs, verifies them with the project's configured build and tests, and records implementation notes.
 model: ['GPT-5.3-Codex', 'GPT-5.6 Terra']
-tools: ['read', 'search', 'edit', 'execute']
+tools: ['read', 'search', 'edit', 'create', 'apply_patch', 'execute']
 user-invocable: false
 disable-model-invocation: false
 argument-hint: "Exact plan filename stem and expected plan path"

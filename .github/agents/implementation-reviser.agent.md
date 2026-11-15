@@ -2,7 +2,7 @@
 name: implementation-reviser
 description: Triages code and security review findings against the approved plan, applying in-scope fixes or stopping for unresolved decisions.
 model: ['Claude Opus 5.5', 'Claude Sonnet 4.6']
-tools: ['read', 'search', 'edit', 'execute']
+tools: ['read', 'search', 'edit', 'create', 'apply_patch', 'execute']
 user-invocable: false
 disable-model-invocation: false
 argument-hint: "Exact plan filename stem and expected plan path"
