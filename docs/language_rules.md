@@ -1,17 +1,17 @@
 - All blocks are demarcated by whitespace. By default, this is 4 spaces. Exceptions must be declared at a file level.
-- A line break terminates a statement, unless the character immediately before it is `;`
-- Constants may be declared at a module level but variable may not.
-- The `->` operator is used to reference a method, property.
+- A line break terminates a statement, unless the character immediately before it is `;`.
+- Constants may be declared at a module level but variables may not.
+- The `->` operator is used to reference a method or property.
 - The `::` operator is used to reference a static method, property, or class constant.
 - `.` concatenates two strings.
 - A comment that begins with `/*` and ends with `*/` may span one or more lines.
-- `//` Is a single line comment. It may begin at any point in a line after the block indentation.
+- `//` begins a single-line comment. It may begin at any point in a line after the block indentation.
 - Code is broken into modules. All members of a module are private by default. A function, class, interface, or mixin may be shared via the `export` keyword.
 - Functions are defined with the `function` keyword.
 - Conditionals are implemented with the `if`, `elseif`, and `else` keywords.
 - Classes are declared with the `class` keyword.
-- Classes can inherit from a single class keyword via the `extends` keyword.
-- Interfaces are added to a class declaration the `implements` keyword.
+- Classes can inherit from a single class via the `extends` keyword.
+- Interfaces are added to a class declaration with the `implements` keyword.
 - Interfaces may be implemented with mixins by using the `mixin` keyword.
-- A mixin must implent an interface. E.g. `mixin Foo implements Bar:`
-- A mixin can be used via the `with` keyword. E.g. `class Foo extends Fizz implements Bar with Baz, Buzz with Biz:`
+- A mixin must implement an interface. For example, `mixin Foo implements Bar:`
+- A mixin can be used via the `with` keyword. For example, `class Foo extends Fizz implements Bar with Baz, Buzz with Biz:`

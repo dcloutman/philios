@@ -4,7 +4,7 @@
 Getting Started
 - [Directory Structure](getting-started/directory-structure.md)
 - [Required Tools](getting-started/required-tools.md)
-- [Building `philios`](getting-started/building.md)
+- [Building `philios`](building.md)
 - AI Usage
   - Quick Start
   - Tickets
