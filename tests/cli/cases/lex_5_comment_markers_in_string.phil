@@ -1,0 +1,4 @@
+function s(x: String, y: String): Integer:
+    return 13
+function main():
+    return s("// not a comment", "/* nor this")

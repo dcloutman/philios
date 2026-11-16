@@ -1,0 +1,4 @@
+function f(Integer2: Integer, integer: Integer, _if: Integer): null:
+    pass
+function main():
+    f(1, 2, 3)

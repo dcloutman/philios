@@ -1,0 +1,5 @@
+function unused(): Integer:
+    return 1
+    pass
+function main():
+    pass

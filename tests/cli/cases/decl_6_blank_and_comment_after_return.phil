@@ -1,0 +1,6 @@
+function h(): Integer:
+    return 4
+
+    // trailing comment
+function main():
+    return h()

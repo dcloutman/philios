@@ -1,0 +1,4 @@
+function f(x: String): Integer:
+    return 1
+function main():
+    return f(null)

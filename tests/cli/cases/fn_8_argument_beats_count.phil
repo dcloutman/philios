@@ -1,0 +1,6 @@
+function fail(): Integer:
+    pass
+function one(x: Integer): Integer:
+    return x
+function main():
+    return one(1, fail())

@@ -1,0 +1,4 @@
+function two(a: Integer, b: Integer): Integer:
+    return a
+function main():
+    return two("s")

@@ -1,0 +1,4 @@
+function s(): String:
+    return null
+function main():
+    s()

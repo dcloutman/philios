@@ -1,0 +1,8 @@
+function id(x: Integer): Integer:
+    return x
+function apply(f: Function, x: Integer): Integer:
+    return f(x)
+function getId(): Function:
+    return id
+function main():
+    return apply(getId(), 7)

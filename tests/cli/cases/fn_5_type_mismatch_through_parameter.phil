@@ -1,0 +1,6 @@
+function id(x: Integer): Integer:
+    return x
+function apply(f: Function): Integer:
+    return f("s")
+function main():
+    return apply(id)

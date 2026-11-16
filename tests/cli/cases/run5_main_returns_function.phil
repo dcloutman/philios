@@ -1,0 +1,4 @@
+function g(): null:
+    pass
+function main():
+    return g

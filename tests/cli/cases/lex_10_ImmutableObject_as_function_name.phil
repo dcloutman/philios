@@ -1,0 +1,4 @@
+function main():
+    pass
+function ImmutableObject (): null:
+    pass

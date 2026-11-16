@@ -1,0 +1,6 @@
+function g(): null:
+    pass
+function f(g: Integer): null:
+    pass
+function main():
+    pass

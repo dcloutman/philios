@@ -1,0 +1,10 @@
+function Integer2(): null:
+    pass
+function integer(): null:
+    pass
+function _if(): null:
+    pass
+function main():
+    Integer2()
+    integer()
+    _if()

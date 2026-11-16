@@ -1,0 +1,4 @@
+function s(x: String): Integer:
+    return	5
+function main():
+    return s("a	b") // c	d

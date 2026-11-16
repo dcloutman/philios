@@ -1,0 +1,6 @@
+function f(): null:
+    pass
+function f(): null:
+    pass
+function main():
+    pass

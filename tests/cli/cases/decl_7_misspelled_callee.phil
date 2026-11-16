@@ -1,0 +1,6 @@
+function unused(): Integer:
+    return hlper(1)
+function helper(x: Integer): Integer:
+    return x
+function main():
+    pass

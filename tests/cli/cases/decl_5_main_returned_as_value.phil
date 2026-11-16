@@ -1,0 +1,4 @@
+function g(): Function:
+    return main
+function main():
+    pass

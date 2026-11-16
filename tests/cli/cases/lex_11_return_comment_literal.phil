@@ -1,0 +1,4 @@
+function h(): Integer:
+    return/*c*/42
+function main():
+    h()

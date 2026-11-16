@@ -299,3 +299,39 @@ and the generator may revise any of them within the plan:
   - No file under `src/` includes `fcntl.h`, `unistd.h`, `stat.h`, or `syscall.h`. No file under
     `src/frontend/` includes `runtime/` or `analysis/`. No file under `src/runtime/object_model/`
     includes `runtime/evaluator/`. No include uses `..`.
+
+## 8. Re-run of this stage (2026-11-15)
+The developer authorized implementation. This run confirmed the stage output and changed no file
+except this record. It adds no decision.
+- **Identity:** plan ID `0001` resolves to `plans/0001.md`, and the review is
+  `plans/0001_review.md`. The plan has not changed since revision 8 (D49), so §1 to §6 still
+  apply.
+- **Stage output is intact:** every file in §4 exists. No header and no test file has changed
+  since this record was written. The generator changed only `.cpp` bodies. No stub interface in
+  §5 changed.
+- **Changes made after this stage (not made by this stage):**
+  - The developer committed `CMakeLists.txt` (commits `4f7a902` and `b0d8dfa`). This stage left
+    it unchanged.
+  - A generator pass added `.clang-tidy` and `tests/unit/.clang-tidy` and implemented some bodies
+    (`plans/0001-implementation_notes.md`).
+  - A security review then ran (`plans/0001-security_review.md`, NO-GO while the stubs remain).
+- **§3 is out of date for `escapeForDiagnostic`:** it no longer throws `InternalError`. It now
+  returns its input unchanged. This breaks the header's postcondition and the style guide's ban on
+  returning a fake success value (SEC-0001-01). The generator owns this fix. This stage did not
+  revert it.
+- **Items for the generator (from the plan, not decided here):**
+  - `src/frontend/parser/parser.cpp` emits 15 `-Wunused-result` warnings for `expect()` and
+    `advance()`. Plan §7 requires a build with no warnings.
+  - `CMakeLists.txt` registers one `add_test`. Plan §7 also requires these, which are still
+    missing:
+    - the dedicated and `~`-prefixed T-CLI-10 entries through `PHILIOS_TCLI10_TEST_CASE`
+    - the CLI and T-BUILD entries
+  - The items in §6 (items 2, 3, and 5) are still open.
+- **Verification:**
+  - Ran a scratch out-of-tree build in `/tmp` (deleted afterward) with GCC 13.3, CMake 3.28.3,
+    Catch2 3.16.1, and `PHILIOS_SANITIZE=ON`.
+  - All targets built. The only warnings were the parser warnings listed above.
+  - `--list-tests` reported 70 test cases. The T-CLI-10 spec matched exactly 1, and a spec that
+    matches no test case exited with status 2.
+  - The run that excluded T-CLI-10 passed 21 test cases and failed 48. No sanitizer stopped the
+    run. Every failure is expected while the stubs remain.

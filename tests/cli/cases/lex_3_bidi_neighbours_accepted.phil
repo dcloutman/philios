@@ -1,0 +1,5 @@
+function s(x: String): Integer:
+    return 6
+function main():
+    //   ⁪
+    return s(" ⁪")

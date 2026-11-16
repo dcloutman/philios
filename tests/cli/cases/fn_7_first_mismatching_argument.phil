@@ -1,0 +1,4 @@
+function three(a: Integer, b: Integer, c: Integer): Integer:
+    return a
+function main():
+    return three(1, "s", null)

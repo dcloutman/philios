@@ -1,0 +1,1 @@
+function h(): Integer:    return 9function main():    return h()

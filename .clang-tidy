@@ -1,3 +1,7 @@
 Checks: '-*,cert-*,bugprone-*'
 WarningsAsErrors: '*'
-HeaderFilterRegex: '^(src|tests/unit)/'
+# clang-tidy matches this regex against the header path as the compiler resolved it, which is
+# absolute here because the include roots are absolute. Match project headers under src/ and
+# tests/unit/ (including nested subdirectories) at any path prefix; third-party headers such as
+# Catch2 live under system or /usr/local include directories and are not matched.
+HeaderFilterRegex: '(^|/)(src|tests/unit)/.+\.(h|hpp)$'

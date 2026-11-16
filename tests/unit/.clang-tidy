@@ -1,0 +1,11 @@
+# Test-only suppression (plan 0001 §7, D36, D49). This is the only file-level clang-tidy
+# suppression in the project.
+#
+# Rule: cert-err58-cpp (CERT ERR58-CPP, handle all exceptions thrown before main() begins).
+# Reason: Catch2's TEST_CASE registers each test through a dynamically initialized
+# namespace-scope object, which cert-err58-cpp flags. Registration cannot be written another way,
+# so per-test NOLINT comments would be needed on every test. The exception covers only files under
+# tests/unit/; src/ and all other code keep the check (verified by T-BUILD-5). The C++ style guide's
+# ban on dynamically initialized static objects is otherwise unchanged.
+InheritParentConfig: true
+Checks: '-cert-err58-cpp'

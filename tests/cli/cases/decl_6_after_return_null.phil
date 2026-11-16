@@ -1,0 +1,5 @@
+function n(): null:
+    return null
+    pass
+function main():
+    pass

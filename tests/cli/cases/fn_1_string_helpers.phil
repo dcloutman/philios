@@ -1,0 +1,6 @@
+function greet(s: String): String:
+    return s
+function len(s: String): Integer:
+    return 17
+function main():
+    return len(greet("hi"))

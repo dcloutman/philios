@@ -1,0 +1,6 @@
+function f(): Integer:
+    return g()
+function g(): Integer:
+    return f()
+function main():
+    return f()

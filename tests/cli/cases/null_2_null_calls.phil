@@ -1,0 +1,15 @@
+function n(x: null): null:
+    return x
+function m(): null:
+    pass
+function b(): null:
+    return
+function r(): null:
+    return null
+function main():
+    m()
+    n(m())
+    n(b())
+    n(r())
+    n(null)
+    return 5

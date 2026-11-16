@@ -1,0 +1,4 @@
+function main():
+    // only a comment
+function f(): null:
+    pass

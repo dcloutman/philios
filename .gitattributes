@@ -1,0 +1,3 @@
+# CLI golden fixtures (plan 0001 §9) are byte-exact inputs: some deliberately contain CR, CR LF,
+# NUL, control, bidi, or malformed UTF-8 bytes. Never convert their line endings.
+tests/cli/cases/*.phil -text

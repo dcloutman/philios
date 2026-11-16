@@ -1,0 +1,4 @@
+function h(): Integer:
+    return main()
+function main():
+    pass

@@ -1,0 +1,4 @@
+function main():
+    /* multi
+       line */   // note
+    return 14

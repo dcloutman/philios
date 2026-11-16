@@ -1,0 +1,8 @@
+function main():
+    return a(1)
+function a(x: Integer): Integer:
+    return b(x, c())
+function b(x: Integer, y: Integer): Integer:
+    return y
+function c(): Integer:
+    return 24

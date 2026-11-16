@@ -24,7 +24,10 @@ names them explicitly.
 - 4-space indentation, same-line opening braces, 100-column limit. Always brace control-flow
   bodies, including single statements.
 - `#pragma once` in every header. Include what you use. Include order: matching header, project
-  headers, then standard library headers, each group sorted alphabetically.
+  headers, then standard library headers, each group sorted alphabetically. The project has one
+  include root, `src/`: include project headers by their full path from it, in double quotes (for
+  example `#include "frontend/lexer/token.hpp"`), and never use relative `..` paths. Use angle
+  brackets only for standard library and third-party headers.
 - Project code lives in namespace `philios` (or sub-namespaces); `main` is the only exception.
   File-local helpers in `.cpp` files go in an anonymous namespace; never use an anonymous
   namespace in a header (CERT DCL59). Headers define only inline, `constexpr`, or template

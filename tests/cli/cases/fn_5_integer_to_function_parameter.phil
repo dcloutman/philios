@@ -1,0 +1,4 @@
+function apply(f: Function, x: Integer): Integer:
+    return f(x)
+function main():
+    return apply(1, 2)

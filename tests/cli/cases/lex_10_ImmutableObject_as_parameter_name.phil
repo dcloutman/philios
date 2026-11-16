@@ -1,0 +1,4 @@
+function main():
+    pass
+function f (ImmutableObject: Integer): null:
+    pass

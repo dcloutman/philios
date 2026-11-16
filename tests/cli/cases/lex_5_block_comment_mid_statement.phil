@@ -1,0 +1,4 @@
+function id(x: Integer): Integer:
+    return x
+function main():
+    return id(/* mid */ 12)

@@ -1,0 +1,6 @@
+function main():
+    return a()
+function a(): Integer:
+    return b()
+function b(): Integer:
+    return 23

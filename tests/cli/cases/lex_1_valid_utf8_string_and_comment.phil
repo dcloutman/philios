@@ -1,0 +1,5 @@
+function s(x: String): Integer:
+    return 3
+function main():
+    // héllo € 𝄞
+    return s("héllo € 𝄞")

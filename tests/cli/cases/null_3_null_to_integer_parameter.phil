@@ -1,0 +1,4 @@
+function f(x: Integer): Integer:
+    return 1
+function main():
+    return f(null)
