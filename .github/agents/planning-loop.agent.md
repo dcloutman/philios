@@ -9,6 +9,12 @@ user-invocable: true
 disable-model-invocation: false
 ---
 
+## Expect Re-Runs
+It is possible that the planning loop may have stalled or encountered an issue that requires re-running the loop to continue progress.
+- Always check for evidence of previous runs.
+- If artifacts from previous runs exist, treat them as partially implemented work and build upon them rather than discarding them.
+- **NEVER** assume that a previous run completed successfully. Always verify the state of the workspace and artifacts beforeterminating because the artifacts' claim that work is complete may be false.
+
 ## Workspace and command boundaries
 - Work only in the checked-out local workspace. Remote repository access is neither needed nor permitted.
 - Do not access the network, including through `curl`, `wget`, package downloads, or remote Git operations. Do not ask the developer to run a network command that executes downloaded code.
