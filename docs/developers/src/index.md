@@ -2,6 +2,7 @@
 ## Table of Contents
 - Getting Started
   - [Directory Structure](getting-started/directory-structure.md)
+  - [Building `philios`](getting-started/building.md)
   - AI Usage
     - Quick Start
     - Tickets
