@@ -2,9 +2,9 @@
 
 ## Table of Contents
 Getting Started
-- [Directory Structure](getting-started/directory-structure.md)
-- [Required Tools](getting-started/required-tools.md)
-- [Building `philios`](building.md)
+- [Directory Structure](directory-structure.md)
+- [Required Tools](required-tools.md)
+- [Compiling `philios`](compiling-philios.md)
 - AI Usage
   - Quick Start
   - Tickets
