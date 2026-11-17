@@ -78,9 +78,13 @@ not continue to another stage.
 
 ## Workflow
 
-1. **Clarify the draft.** If the plan has not had a grill session or has unresolved questions, invoke
-   `plan-grill-me` with the exact plan ID and expected plan, grill, and review paths. On each
-   invocation, inspect its `Grill handoff`:
+1. **Clarify the draft once.** At the start of the planning loop, check whether
+   `plans/<plan-id>_grill.md` already exists. If it exists, use that record and do not invoke
+   `plan-grill-me`, even if later review rounds raise questions or findings. If it does not exist,
+   invoke `plan-grill-me` with the exact plan ID and expected plan, grill, and review paths. This
+   gate applies even when a review document from an earlier attempt already exists. If an interview
+   was interrupted, resume it with its previous handoff state rather than starting a new interview.
+   On each invocation, inspect its `Grill handoff`:
    - If the stage is `question` or `confirmation`, verify the plan ID and path, relay the
      developer-facing text verbatim, and stop for the developer's next message. Do not invoke
      another planning agent or claim the grill session is still running.
@@ -90,8 +94,8 @@ not continue to another stage.
      the previous handoff state, and the developer's answer verbatim. Repeat until the subagent
      reports `complete`.
    - Continue to plan composition only after completion and verification that the corresponding
-     grill record exists. If the developer has already answered current questions in the record,
-     do not repeat the interview unnecessarily.
+     grill record exists. After this initial grilling gate is complete, never invoke
+     `plan-grill-me` again during review iterations.
 2. **Compose and run the primary review.** Invoke `plan-composer` with the exact plan ID and
    expected plan, grill, and review paths. It revises the plan from the developer's decisions and
    existing findings, then calls `plan-reviewer` with the same exact ID and paths. Wait for their

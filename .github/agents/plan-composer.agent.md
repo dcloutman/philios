@@ -55,7 +55,7 @@ Read all of these before changing anything:
 4. `AGENTS.md` (Document Precedence and Open Decisions), `docs/language_rules.md`, `.github/instructions/cpp-style-guide.instructions.md`, and `plans/AGENTS.md`.
 5. Earlier plans that this plan depends on. Plans numbered lower than the current one are complete.
 
-If there is no grill record and no review, stop and report that the grill-me session has not been run. Do not run it yourself; the orchestrator runs it with the developer.
+If there is no grill record, stop and report that the grill-me session has not been run. Do not run it yourself; the orchestrator runs it with the developer before composition, even if a review document already exists.
 
 ## Process
 1. **Collect inputs.** List every grill decision, every open review finding, and every conflict between the plan and the sources in step 4. A finding is open unless the reviewer has marked it resolved. Only a reviewer can resolve a finding.

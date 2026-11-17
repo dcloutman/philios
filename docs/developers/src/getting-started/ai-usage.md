@@ -43,12 +43,15 @@ The custom agents and skills target the Copilot harness. Add new slash commands 
 
 ### Workflow
 
-1. The `planning-loop` orchestrator relays questions from `plan-grill-me` to the developer one at
-   a time and stops for each answer. On the next turn, it invokes `plan-grill-me` again with the
-   same plan ID, the previous handoff state, and the answer verbatim. After the last question, the
-   orchestrator relays a decision summary for confirmation. Only after confirmation does the grill
-   agent write or append `plans/<plan-id>_grill.md`. The developer makes the decisions. Unresolved
-   questions remain open.
+1. At the beginning of the planning loop, the orchestrator checks whether
+   `plans/<plan-id>_grill.md` already exists. It runs `plan-grill-me` only when that record does not
+   exist, including when a review document exists from an earlier attempt. The orchestrator relays
+   questions to the developer one at a time and stops for each answer. On the next turn, it invokes
+   `plan-grill-me` again with the same plan ID, the previous handoff state, and the answer verbatim.
+   After the last question, the orchestrator relays a decision summary for confirmation. Only after
+   confirmation does the grill agent write `plans/<plan-id>_grill.md`. Once the record
+   exists, later review rounds do not trigger another grill session. The developer makes the
+   decisions. Unresolved questions remain open.
 2. The `plan-composer` revises the draft using the grill record and existing review feedback. It
    then calls `plan-reviewer`, which records the primary review and a Go or No-go verdict in
    `plans/<plan-id>_review.md`.
