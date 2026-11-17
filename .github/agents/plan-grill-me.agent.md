@@ -3,7 +3,7 @@ name: plan-grill-me
 description: "Conduct a parent-mediated interview about a draft plan in plans/, returning one question per delegated call and recording confirmed decisions for plan-composer. Use when grilling or clarifying a Philios plan."
 argument-hint: "Exact plan filename stem, e.g. 0001 or 00010"
 model: gpt-5.3-codex
-tools: [read, search, edit, create, apply_patch]
+tools: [read, search, edit]
 agents: []
 user-invocable: false
 disable-model-invocation: false
@@ -116,8 +116,11 @@ Cover every branch that applies:
 1. Return a concise summary of decisions and open questions as a `confirmation` handoff. The parent
    relays it to the developer and waits for confirmation or corrections.
 2. Only after receiving explicit confirmation in a later invocation, write the record to
-   `plans/<plan-id>_grill.md`. If the file already exists, append a new dated session section
-   instead of changing earlier sessions.
+   `plans/<plan-id>_grill.md`. Use the `edit` tool to create the file or to append to it. If the
+   file already exists, append a new dated session section instead of changing earlier sessions.
+   After writing, read the file back to confirm that the record exists. If the `edit` tool is
+   unavailable or the write fails, return the `confirmation` stage with the error instead of
+   reporting `complete`.
 3. Reply with the record's path, the number of decisions and open questions, and any blocking items,
    along with the confirmed plan ID and path.
 

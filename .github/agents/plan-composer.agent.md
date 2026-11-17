@@ -3,7 +3,7 @@ name: plan-composer
 description: "Revise a Philios plan using its grill record and review findings, then call plan-reviewer. Edits only the plan and never writes code. Use when revising a plan or applying planning-loop feedback."
 argument-hint: "Exact plan filename stem, e.g. 0001 or 00010, and grill decisions"
 model: Claude Opus 5.5
-tools: [read, search, edit, create, apply_patch, agent]
+tools: [read, search, edit, agent]
 agents: [plan-reviewer]
 user-invocable: false
 disable-model-invocation: false

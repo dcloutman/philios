@@ -3,7 +3,7 @@ name: plan-reviewer-security
 description: "Final, secondary security review of a plan in plans/ after plan-reviewer and the architecture reviewer have approved it. Checks the plan against SEI CERT C++, the project's C++ style guide, and interpreter-specific hazards (reentrancy, lifetimes, numeric UB, stack depth, exceptions, input handling), writes findings to the plan's review document, and gives the final go/no-go. Use when: security review of an approved plan in the Planning Loop."
 argument-hint: "Exact plan filename stem, e.g. 0001 or 00010, and current review"
 model: gpt-5.6-sol
-tools: [read, search, edit, create, apply_patch]
+tools: [read, search, edit]
 agents: []
 user-invocable: false
 disable-model-invocation: false
