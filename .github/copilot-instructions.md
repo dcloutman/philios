@@ -32,6 +32,7 @@
 - Focus on giving a high-level summary of the changes made to the affected files. Avoid including implementation details or unrelated information.
 - Limit the subject line to 120 characters
 - Separate the subject line from the body with a blank line.
+- Do not wrap lines at a fixed width. Insert a line break only to start a new paragraph.
 - Write commit messages as a subject-omitted past-tense declarative sentence.
 - Use past tense for the content of the commit message **including the subject line**.
 - Subject lines must be complete sentences and end with correct punctuation.
