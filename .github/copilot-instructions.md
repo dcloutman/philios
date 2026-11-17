@@ -1,5 +1,12 @@
 # Copilot Instructions
 
+## Agents are Not Authors
+- Agents **are not** co-authors of the code. Do not claim authorship in commit messages or code.
+- Do not include agent names or identifiers in commit messages or code.
+- Do not reference agents as authors or contributors in any project documentation.
+- Do not include agent names or identifiers in project documentation.
+- Do not attribute code or documentation to agents in any form.
+
 ## Line Endings
 - Always use LF (`\n`) for line endings in all generated text.
 - Never use CRLF (`\r\n`) line endings.
@@ -19,8 +26,10 @@
 - Use proper grammar, punctuation, and spelling.
 
 ## Commit Messages
-- Run `git diff --staged` before composing commit messages.
-- Keep commit messages concise and focused on a giving a high-level summary of the changes made to the affected files. Avoid including implementation details or unrelated information.
+- **ALWAYS** run `git diff --staged` before composing commit messages.
+- **NEVER** claim authorship via an attribution line in commit messages or in the resulting code. Agents **are not** co-authors!
+- **NEVER** place an email address in commit messages or code. Flag changes that publish email addresses to the user.- Keep commit messages concise.
+- Focus on giving a high-level summary of the changes made to the affected files. Avoid including implementation details or unrelated information.
 - Limit the subject line to 120 characters
 - Separate the subject line from the body with a blank line.
 - Write commit messages as a subject-omitted past-tense declarative sentence.
