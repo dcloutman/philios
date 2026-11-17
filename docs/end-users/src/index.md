@@ -1,8 +1,21 @@
 # Philios Language Documentation
 
 ## Table of Contents
+These pages describe the features that currently work in Philios.
+
+- Getting Started
+  - [Installation](getting-started/installation.md)
+  - [Your First Program](getting-started/first-program.md)
+- Language Reference
+  - [Source Files](reference/source-files.md)
+  - [Functions](reference/functions.md)
+  - [Types](reference/types.md)
+  - [Errors and Limits](reference/errors-and-limits.md)
+
+## Planned Topics
+The topics below describe features that are not available yet. Their documentation will be added when the features are implemented.
+
 - Installation
-  - Compilation
   - Binaries
     - Windows
     - OS X
