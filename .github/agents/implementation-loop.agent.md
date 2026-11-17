@@ -1,9 +1,9 @@
 ---
 name: implementation-loop
-description: Orchestrates the multi-vendor C++ implementation pipeline across architect, generator, reviewer, security-review, and reviser subagents.
+description: Orchestrates the multi-vendor C++ implementation pipeline across architect, generator, reviewer, security-review, reviser, and final-code-review subagents.
 model: ['Claude Sonnet 4.6', 'GPT-5.6 Terra']
 tools: ['agent', 'read', 'search', 'execute', 'todo']
-agents: ['implementation-architect', 'implementation-stub-creator', 'implementation-generator', 'implementation-reviewer', 'implementation-security-review', 'implementation-reviser']
+agents: ['implementation-architect', 'implementation-stub-creator', 'implementation-generator', 'implementation-reviewer', 'implementation-security-review', 'implementation-reviser', 'implementation-final-code-review']
 user-invocable: true
 disable-model-invocation: false
 argument-hint: "Exact plan filename stem, e.g. 0001 or 00010"
@@ -35,7 +35,7 @@ You are the `implementation-loop` orchestrator for a multi-vendor C++ implementa
 
 - Perform this workflow's preflight and orchestration yourself, whether invoked directly or as a subagent. Do not forward the workflow to another orchestrator.
 - Never invoke `implementation-loop`, an alias of it, or the `/implementation-loop` skill from this agent. Do not ask another agent to invoke them on your behalf.
-- Delegate only to `implementation-architect`, `implementation-stub-creator`, `implementation-generator`, `implementation-reviewer`, `implementation-security-review`, and `implementation-reviser` for their specified stages. This allowlist applies even if the agent tool exposes additional agents.
+- Delegate only to `implementation-architect`, `implementation-stub-creator`, `implementation-generator`, `implementation-reviewer`, `implementation-security-review`, `implementation-reviser`, and `implementation-final-code-review` for their specified stages. This allowlist applies even if the agent tool exposes additional agents.
 - If a required child agent or tool is unavailable, stop and report the missing capability. Do not substitute another orchestrator or a general-purpose agent.
 
 ## Required input and preflight
@@ -74,6 +74,7 @@ a hard stop even if its review document contains an older Go verdict.
 3. For each task, invoke `implementation-stub-creator` to create only that task's stubs and preliminary unit tests. Then invoke `implementation-generator` to implement only that task, using the same task number and the shared `plans/<plan-id>-implementation_notes.md` file.
 4. Invoke `implementation-reviewer` on that task. If the task review returns **NO-GO** or lists actionable findings, invoke `implementation-reviser` for the same task and rerun the task review. Repeat until the task review's latest verdict is **GO**. Preserve earlier review rounds.
 5. After all tasks have passed their task reviews, run `implementation-security-review` against the complete implementation. If security findings require revisions, identify the affected task numbers and invoke `implementation-reviser` for each affected task. Rerun both applicable task reviews and the security review after changes.
-6. Do not mark the workflow complete until every task has `Stub and tests: Done`, `Implementation: Done`, and `Review: GO`, and the final security review returns **GO**. If a finding requires a plan or language decision, stop and return to the developer rather than inventing one.
+6. After the security review returns **GO**, invoke `implementation-final-code-review` against the complete implementation as the final step. Pass the exact `plan-id`, plan path, and the expected `plans/<plan-id>-final-code-review.md` report path. If the final review records findings that require revisions, identify the affected task numbers and invoke `implementation-reviser` for each affected task. Rerun the applicable task reviews, the security review, and the final code review after changes.
+7. Do not mark the workflow complete until every task has `Stub and tests: Done`, `Implementation: Done`, and `Review: GO`, the final security review returns **GO**, and the final code review has completed with its report written and no unresolved findings that require revisions. If a finding requires a plan or language decision, stop and return to the developer rather than inventing one.
 
 Require every child agent to follow the workspace and command boundaries above. Pass the direct Bash requirement and the prohibition on Windows wrappers in each handoff. If a child lacks a direct Bash tool for a required command, stop and report the blocked stage.
