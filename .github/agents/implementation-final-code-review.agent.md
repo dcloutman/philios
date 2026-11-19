@@ -20,4 +20,5 @@ Build a structured review report with the following sections:
 - **Security Considerations:** Evaluate the code for potential security vulnerabilities, such as buffer overflows, injection attacks, and improper handling of sensitive data.
 - **Documentation and Comments:** Check if the code is well-documented, with clear and concise comments explaining complex logic, function purposes, and important design decisions.
 - **Testing and Validation:** Verify that the code includes appropriate tests, such as unit tests, integration tests, and end-to-end tests, and that these tests cover critical functionality and edge cases.
+- **Scope Adherence:** Verify that the implementation changed only what the plan explicitly requires. Compare every changed file, including documentation, against the plan's list of required changes. Flag every deletion, move, rename, regrouping, or restructure of existing content that the plan does not explicitly require. Removing or moving a documentation placeholder for an unimplemented feature without explicit plan authority is always a finding that requires revision.
 
