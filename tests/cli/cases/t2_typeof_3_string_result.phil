@@ -1,0 +1,7 @@
+function take(s: String): Integer:
+    return 4
+function name(x: Object): String:
+    return typeof(x)
+function main():
+    take(typeof(1))
+    return take(name(1))

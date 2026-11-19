@@ -13,17 +13,17 @@ namespace {
 
 struct FunctionContext {
     std::string_view name{};
-    TypeName declaredReturn{TypeName::Null};
+    DeclaredType declaredReturn{TypeName::Null, false};
     bool isMain{false};
     std::set<std::string_view, std::less<>> parameters;
     const std::set<std::string_view, std::less<>>* functionNames{nullptr};
 };
 
-[[nodiscard]] TypeName declaredReturnType(const FunctionDecl& function) {
+[[nodiscard]] DeclaredType declaredReturnType(const FunctionDecl& function) {
     if (function.name() == "main") {
-        return TypeName::Integer;
+        return DeclaredType{TypeName::Integer, false};
     }
-    const std::optional<TypeName> returnType = function.returnType();
+    const std::optional<DeclaredType> returnType = function.returnType();
     if (!returnType.has_value()) {
         throw DeclarationError(function.location(), "function return type is required");
     }
@@ -68,6 +68,12 @@ void validateExpression(const ASTNode& expression, const FunctionContext& contex
     case NodeKind::CallExpr:
         validateCall(static_cast<const CallExpr&>(expression), context);
         return;
+    case NodeKind::EchoCall:
+        validateExpression(static_cast<const EchoCall&>(expression).argument(), context);
+        return;
+    case NodeKind::TypeofCall:
+        validateExpression(static_cast<const TypeofCall&>(expression).argument(), context);
+        return;
     case NodeKind::FunctionDecl:
     case NodeKind::Param:
     case NodeKind::Block:
@@ -94,7 +100,9 @@ void validateStatements(const Block& block, const FunctionContext& context) {
             const auto& returnStmt = static_cast<const ReturnStmt&>(*statement);
             const ASTNode* value = returnStmt.value();
             if (value == nullptr) {
-                if (context.isMain || context.declaredReturn != TypeName::Null) {
+                if (context.isMain ||
+                    (context.declaredReturn != DeclaredType{TypeName::Null, false} &&
+                     !context.declaredReturn.nullable)) {
                     throw DeclarationError(returnStmt.location(),
                                            "bare return is not allowed in this function");
                 }
@@ -108,7 +116,7 @@ void validateStatements(const Block& block, const FunctionContext& context) {
             break;
         case NodeKind::ExprStmt: {
             const auto& exprStmt = static_cast<const ExprStmt&>(*statement);
-            validateCall(exprStmt.call(), context);
+            validateExpression(exprStmt.expression(), context);
             break;
         }
         case NodeKind::FunctionDecl:
@@ -119,6 +127,8 @@ void validateStatements(const Block& block, const FunctionContext& context) {
         case NodeKind::StringLiteral:
         case NodeKind::NullLiteral:
         case NodeKind::Identifier:
+        case NodeKind::EchoCall:
+        case NodeKind::TypeofCall:
             throw InternalError("Validator: invalid statement node kind");
         }
     }
@@ -159,7 +169,8 @@ void validateProgram(const Program& program) {
             if (!function->params().empty()) {
                 throw DeclarationError(function->location(), "main must have no parameters");
             }
-            if (function->returnType().has_value() && *function->returnType() != TypeName::Integer) {
+            if (function->returnType().has_value() &&
+                *function->returnType() != DeclaredType{TypeName::Integer, false}) {
                 throw DeclarationError(function->location(), "main return type must be Integer");
             }
         } else if (!function->returnType().has_value()) {

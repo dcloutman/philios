@@ -1,0 +1,6 @@
+function make(): Object:
+    return "s"
+function take(x: Object): Integer:
+    return 0
+function main():
+    return take(make())

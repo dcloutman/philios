@@ -46,6 +46,7 @@ enum class RuntimeErrorKind {
     MissingReturn,            ///< A non-`null`, non-`main` function ended without `return` (D13).
     CallDepthExceeded,        ///< Call depth would exceed `kMaxCallDepth` (D7, D24 precedence).
     EvaluationDepthExceeded,  ///< Evaluation depth would exceed `kMaxEvalDepth` (D24).
+    OutputWrite,              ///< `echo` could not write or flush its bytes (plan 0002 §3.6, D18).
 };
 
 /// @brief Returns the lowercase class name used in diagnostics: `lexical`, `syntax`,

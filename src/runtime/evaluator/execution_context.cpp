@@ -1,15 +1,34 @@
 #include "runtime/evaluator/execution_context.hpp"
 
 #include "common/errors.hpp"
+#include "runtime/evaluator/script_output.hpp"
 #include "runtime/object_model/null_object.hpp"
 
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <system_error>
+#include <utility>
 
 namespace philios {
+namespace {
 
-ExecutionContext::ExecutionContext() : null_(std::make_shared<NullObject>()) {}
+[[nodiscard]] OutputWriter requireOutputWriter(OutputWriter output) {
+    if (!output) {
+        throw InternalError("execution context requires a non-empty output writer");
+    }
+    return output;
+}
+
+} // namespace
+
+ExecutionContext::ExecutionContext(OutputWriter output)
+    : output_(requireOutputWriter(std::move(output))), null_(std::make_shared<NullObject>()) {}
+
+std::error_code ExecutionContext::writeOutput(std::string_view bytes) {
+    return output_(bytes);
+}
 
 const std::shared_ptr<NullObject>& ExecutionContext::nullObject() const noexcept {
     return null_;

@@ -1,0 +1,4 @@
+function second(a: Integer, b: Integer): Integer:
+    return b
+function main():
+    return second(-1, -2)

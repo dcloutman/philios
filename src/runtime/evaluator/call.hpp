@@ -19,7 +19,10 @@ namespace philios {
 /// check, argument-type checks left to right (matchesDeclaredType), a fresh Environment holding the
 /// parameters whose enclosing scope is the callee's `closureEnv`, the body, and the return-type
 /// check. A `null`-returning function that falls off its end returns the context's NullObject;
-/// `main` returns Integer 0 in that case; any other function raises the missing-return error.
+/// `main` returns Integer 0 in that case; any other function, including a `?T` or `Object`
+/// function, raises the missing-return error at the function name (plan 0002 D29). A bare
+/// `return` completes with the context's NullObject, which the return check accepts for `null`
+/// and `?T` functions (plan 0002 §3.4).
 ///
 /// Reentrant: runs Philios code.
 /// @param context The execution context; borrowed.

@@ -1,0 +1,6 @@
+function seven(): Integer:
+    return 7
+function call(f: Object): Integer:
+    return f()
+function main():
+    return call(seven)

@@ -2,10 +2,12 @@
 
 #include "cli/exit_status.hpp"
 #include "cli/source_file.hpp"
+#include "cli/standard_output.hpp"
 #include "common/errors.hpp"
 #include "runtime/evaluator/execution_context.hpp"
 #include "runtime/evaluator/interpreter.hpp"
 #include "runtime/evaluator/module.hpp"
+#include "runtime/evaluator/script_output.hpp"
 
 #include <cstdio>
 #include <cstddef>
@@ -74,7 +76,8 @@ int runCli(int argc) {
 }
 
 int runProject() {
-    ExecutionContext context;
+    ignoreBrokenPipeSignal();
+    ExecutionContext context{OutputWriter{writeStandardOutput}};
     std::string source = loadMainSource();
     const std::unique_ptr<Module> module = Module::load(context, std::move(source));
     return runMain(context, *module);

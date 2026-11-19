@@ -1,0 +1,4 @@
+function f(x: Float): null:
+    pass
+function main():
+    return 0

@@ -1,0 +1,4 @@
+function f(x: ? Object): null:
+    pass
+function main():
+    return 0

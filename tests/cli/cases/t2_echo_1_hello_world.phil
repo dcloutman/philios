@@ -1,0 +1,3 @@
+function main(): Integer:
+    echo("Hello World")
+    return 1

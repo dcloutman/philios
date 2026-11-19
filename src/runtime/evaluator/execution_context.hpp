@@ -1,17 +1,21 @@
 #pragma once
 
 /// @file
-/// @brief The execution context: limits, depth counters with RAII guards, and the `null`
-///        instance (plan 0001 §3.4, §3.7, §3.9, D7, D18, D24).
+/// @brief The execution context: limits, depth counters with RAII guards, the `null` instance
+///        (plan 0001 §3.4, §3.7, §3.9, D7, D18, D24), and the program-output writer (plan 0002
+///        §3.6).
 ///
 /// Created by the CLI entry point and passed explicitly by reference to Module::load and to every
-/// reentrant function. Never global. Contains no test hooks.
+/// reentrant function. Never global. Contains no test hooks; tests supply their own OutputWriter.
 
 #include "common/errors.hpp"
+#include "runtime/evaluator/script_output.hpp"
 #include "runtime/object_model/null_object.hpp"
 
 #include <cstddef>
 #include <memory>
+#include <string_view>
+#include <system_error>
 
 namespace philios {
 
@@ -28,10 +32,14 @@ public:
     /// @brief Maximum number of nested ASTNode::evaluate entries (D24). Fixed, not configurable.
     static constexpr std::size_t kMaxEvalDepth = 10000;
 
-    /// @brief Creates the context and its NullObject instance.
-    /// @post callDepth() == 0, evaluationDepth() == 0, nullObject() is non-null.
-    /// @throws std::bad_alloc on exhaustion.
-    ExecutionContext();
+    /// @brief Creates the context, its NullObject instance, and takes ownership of the program's
+    ///        output writer (plan 0002 §3.6).
+    /// @param output The writer used by writeOutput; stored by value. Must not be empty and must
+    ///               meet the OutputWriter contract (script_output.hpp).
+    /// @post callDepth() == 0, evaluationDepth() == 0, nullObject() is non-null, and the stored
+    ///       writer is non-empty.
+    /// @throws InternalError if @p output is empty; std::bad_alloc on exhaustion.
+    explicit ExecutionContext(OutputWriter output);
 
     ExecutionContext(const ExecutionContext&) = delete;
     ExecutionContext& operator=(const ExecutionContext&) = delete;
@@ -52,10 +60,20 @@ public:
     /// @throws Nothing.
     [[nodiscard]] std::size_t evaluationDepth() const noexcept;
 
+    /// @brief Passes @p bytes to the stored writer and returns its result (plan 0002 §3.6).
+    ///
+    /// Used only by `echo` evaluation, which reports a non-empty result as
+    /// RuntimeErrorKind::OutputWrite at the `echo` keyword. Does not change either depth counter.
+    /// @param bytes The exact bytes to write. Borrowed for the duration of the call only.
+    /// @return The writer's result: empty on success, non-empty on any failure.
+    /// @throws std::bad_alloc only (the OutputWriter contract).
+    [[nodiscard]] std::error_code writeOutput(std::string_view bytes);
+
 private:
     friend class CallDepthGuard;
     friend class EvaluationDepthGuard;
 
+    OutputWriter output_;
     std::shared_ptr<NullObject> null_;
     std::size_t callDepth_{0};
     std::size_t evaluationDepth_{0};

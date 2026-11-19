@@ -23,6 +23,10 @@ public:
     /// @throws Nothing.
     [[nodiscard]] ObjectType objectType() const noexcept override;
 
+    /// @brief The owned bytes, borrowed for the duration of the call.
+    /// @throws Nothing.
+    [[nodiscard]] std::string_view bytes() const noexcept;
+
     /// @brief Whether this String's bytes equal @p bytes exactly (T-FN-1).
     /// @param bytes Borrowed for the duration of the call.
     /// @throws Nothing.

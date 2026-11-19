@@ -1,0 +1,4 @@
+function take(x: Object): Integer:
+    return 1
+function main():
+    return take(null)

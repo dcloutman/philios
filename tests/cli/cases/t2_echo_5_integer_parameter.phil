@@ -1,0 +1,5 @@
+function p(n: Integer): null:
+    echo(n)
+function main():
+    echo("a")
+    p(1)

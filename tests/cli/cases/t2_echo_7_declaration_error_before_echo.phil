@@ -1,0 +1,4 @@
+function main():
+    echo("a")
+function unused(): Integer:
+    return nope()

@@ -47,7 +47,7 @@ namespace {
 
 [[nodiscard]] std::optional<TokenKind> keywordKind(std::string_view text) noexcept {
     using Pair = std::pair<std::string_view, TokenKind>;
-    static constexpr auto kKeywords = std::array<Pair, 23>{
+    static constexpr auto kKeywords = std::array<Pair, 28>{
         Pair{"function", TokenKind::KeywordFunction},
         Pair{"return", TokenKind::KeywordReturn},
         Pair{"null", TokenKind::KeywordNull},
@@ -71,6 +71,11 @@ namespace {
         Pair{"with", TokenKind::KeywordWith},
         Pair{"export", TokenKind::KeywordExport},
         Pair{"import", TokenKind::KeywordImport},
+        Pair{"not", TokenKind::KeywordNot},
+        Pair{"goto", TokenKind::KeywordGoto},
+        Pair{"isa", TokenKind::KeywordIsa},
+        Pair{"echo", TokenKind::KeywordEcho},
+        Pair{"typeof", TokenKind::KeywordTypeof},
     };
 
     for (const auto& [word, kind] : kKeywords) {
@@ -157,6 +162,15 @@ std::vector<Token> Lexer::tokenize() {
                                                  std::size_t length, std::string value) {
         tokens.push_back(Token{TokenKind::StringLiteral, location, source_.substr(start, length),
                                0, std::move(value)});
+    };
+
+    const auto negativeLiteralContext = [&tokens]() noexcept {
+        if (tokens.empty()) {
+            return false;
+        }
+        const TokenKind previous = tokens.back().kind;
+        return previous == TokenKind::LeftParen || previous == TokenKind::Comma ||
+               previous == TokenKind::KeywordReturn;
     };
 
     const auto applyIndentation = [&](SourceLocation tokenLocation) {
@@ -539,6 +553,58 @@ std::vector<Token> Lexer::tokenize() {
         }
         if (*byte == static_cast<unsigned char>(',')) {
             addTokenFromSource(TokenKind::Comma, tokenLocation, position_, 1U);
+            consumeByte();
+            lineHasCode = true;
+            pendingContinuation.reset();
+            continue;
+        }
+        if (*byte == static_cast<unsigned char>('?')) {
+            addTokenFromSource(TokenKind::Question, tokenLocation, position_, 1U);
+            consumeByte();
+            lineHasCode = true;
+            pendingContinuation.reset();
+            continue;
+        }
+        if (*byte == static_cast<unsigned char>('-')) {
+            if (negativeLiteralContext()) {
+                const std::optional<unsigned char> next = peek(1);
+                if (next && isDigit(*next)) {
+                    if (*next == static_cast<unsigned char>('0')) {
+                        throwLexical(tokenLocation, "integer literal has a leading zero");
+                    }
+
+                    const std::size_t start = position_;
+                    consumeByte();
+                    while (true) {
+                        const std::optional<unsigned char> digit = peek(0);
+                        if (!digit || !isDigit(*digit)) {
+                            break;
+                        }
+                        consumeByte();
+                    }
+
+                    const std::size_t digitsStart = start + 1U;
+                    const std::size_t digitsLength = position_ - digitsStart;
+                    const std::string_view digits = source_.substr(digitsStart, digitsLength);
+                    const std::optional<unsigned char> afterDigits = peek(0);
+                    if (afterDigits && isIdentifierPart(*afterDigits)) {
+                        throwLexical(tokenLocation,
+                                     "digit sequence immediately followed by an identifier");
+                    }
+
+                    const std::optional<std::int64_t> value = parseNegativeDecimalInteger(digits);
+                    if (!value) {
+                        throwLexical(tokenLocation, "integer literal out of range");
+                    }
+
+                    addIntegerToken(tokenLocation, start, position_ - start, *value);
+                    lineHasCode = true;
+                    pendingContinuation.reset();
+                    continue;
+                }
+            }
+
+            addTokenFromSource(TokenKind::Minus, tokenLocation, position_, 1U);
             consumeByte();
             lineHasCode = true;
             pendingContinuation.reset();

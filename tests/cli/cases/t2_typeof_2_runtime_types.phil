@@ -1,0 +1,14 @@
+function id(x: Integer): Integer:
+    return x
+function obj(x: Object): String:
+    return typeof(x)
+function opt(x: ?String): String:
+    return typeof(x)
+function main():
+    echo(typeof(-1))
+    echo(typeof(null))
+    echo(typeof(id))
+    echo(typeof(id(1)))
+    echo(obj(1))
+    echo(opt(null))
+    echo(typeof(typeof(1)))

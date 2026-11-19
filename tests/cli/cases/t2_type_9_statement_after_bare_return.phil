@@ -1,0 +1,5 @@
+function f(): ?Integer:
+    return
+    pass
+function main():
+    return 0

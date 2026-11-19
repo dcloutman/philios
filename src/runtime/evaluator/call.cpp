@@ -96,11 +96,13 @@ std::shared_ptr<Object> callFunction(ExecutionContext& context, std::shared_ptr<
         if (isMain) {
             result = std::make_shared<Integer>(0);
         } else {
-            std::optional<TypeName> declaredType = declaration->returnType();
+            std::optional<DeclaredType> declaredType = declaration->returnType();
             if (!declaredType.has_value()) {
                 throw InternalError("callFunction: non-main function has no return annotation");
             }
-            if (*declaredType == TypeName::Null) {
+            // Only a `null` function returns `null` by falling off its end; a `?T` function
+            // falling off its end is the missing-return error (plan 0002 D29).
+            if (*declaredType == DeclaredType{TypeName::Null, false}) {
                 result = context.nullObject();
             } else {
                 throw RuntimeError(RuntimeErrorKind::MissingReturn, declaration->location(),
@@ -115,11 +117,11 @@ std::shared_ptr<Object> callFunction(ExecutionContext& context, std::shared_ptr<
         throw InternalError("callFunction: null result");
     }
 
-    const TypeName declaredReturn = [&]() -> TypeName {
+    const DeclaredType declaredReturn = [&]() -> DeclaredType {
         if (isMain) {
-            return TypeName::Integer;
+            return DeclaredType{TypeName::Integer, false};
         }
-        const std::optional<TypeName> declaredType = declaration->returnType();
+        const std::optional<DeclaredType> declaredType = declaration->returnType();
         if (!declaredType.has_value()) {
             throw InternalError("callFunction: non-main function has no return annotation");
         }

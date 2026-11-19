@@ -1,0 +1,4 @@
+function f(): Function:
+    return echo
+function main():
+    pass

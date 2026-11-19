@@ -1,8 +1,9 @@
 #pragma once
 
 /// @file
-/// @brief AST node classes, NodeKind, TypeName, and the iterative-destruction protocol
-///        (plan 0001 §3.4, §3.9, D3, D5, D45).
+/// @brief AST node classes, NodeKind, TypeName, DeclaredType, and the iterative-destruction
+///        protocol (plan 0001 §3.4, §3.9, D3, D5, D45; plan 0002 §3.4, §3.8: DeclaredType and
+///        the EchoCall and TypeofCall pseudo-call nodes).
 ///
 /// Dependency rule (§7.1): this header includes nothing from `src/runtime/` or `src/analysis/`.
 /// ExecutionContext, Environment, and Completion are forward-declared; every `evaluate`
@@ -47,15 +48,35 @@ enum class NodeKind {
     StringLiteral,
     NullLiteral,
     Identifier,
+    EchoCall,   ///< `echo(argument)` pseudo-call (plan 0002 §3.5, §3.8).
+    TypeofCall, ///< `typeof(argument)` pseudo-call (plan 0002 §3.5, §3.8).
 };
 
-/// @brief The parsed `typeName` production (§3.4). Compared with runtime values only by
-///        matchesDeclaredType (§3.6).
+/// @brief The type word of a parsed `typeName` (plan 0001 §3.4; plan 0002 §3.3, §3.4). Compared
+///        with runtime values only by matchesDeclaredType, through DeclaredType.
 enum class TypeName {
     Integer,  ///< `Integer`
     String,   ///< `String`
-    Function, ///< `Function` (untyped function values, D16)
+    Function, ///< `Function` (untyped function values, plan 0001 D16)
     Null,     ///< `null`
+    Object,   ///< `Object`: accepts every non-`null` value (plan 0002 D9)
+};
+
+/// @brief A parsed `typeName` (plan 0002 §3.3, §3.4): a base type word and the optional `?`
+///        nullable prefix.
+///
+/// A plain aggregate stored by value in Param and FunctionDecl; it owns nothing. The nine
+/// declarable types are the five base words with `nullable == false` and `Integer`, `String`,
+/// `Function`, and `Object` with `nullable == true`. Invariant (enforced by the parser, not by
+/// this type): `nullable` is never true together with `TypeName::Null` (`?null` is a syntax
+/// error, D10). Unit tests may build other values directly.
+struct DeclaredType {
+    TypeName base;  ///< The type word.
+    bool nullable;  ///< True for the `?Type` form (D9, D25).
+
+    /// @brief Member-wise equality.
+    /// @throws Nothing.
+    friend bool operator==(const DeclaredType&, const DeclaredType&) noexcept = default;
 };
 
 /// @brief Polymorphic base of every AST node (also the expression base used by CallExpr).
@@ -249,13 +270,112 @@ private:
     std::vector<std::unique_ptr<ASTNode>> arguments_;
 };
 
-/// @brief A call used as a statement; its result is discarded.
+/// @brief `echo(argument)`: the output pseudo-call (plan 0002 §3.5, §3.6, §3.8; D8, D13–D18, D24).
+///
+/// A built-in language construct, not a Philios call: evaluating it adds no call depth, creates
+/// no Environment, and runs no call-depth guard. The parser guarantees exactly one argument, and
+/// that the argument is not an integer or `null` literal (D16, D17).
+class EchoCall final : public ASTNode {
+public:
+    /// @param location Location of the `echo` keyword (output-write and evaluation-depth errors
+    ///        are reported there).
+    /// @param argument The single argument expression; ownership is taken.
+    /// @pre @p argument is non-null.
+    /// @throws InternalError if @p argument is null.
+    EchoCall(SourceLocation location, std::unique_ptr<ASTNode> argument);
+
+    /// @brief Iterative destruction of the argument (plan 0001 §3.9; T2-OWN-2).
+    /// @throws Nothing; allocates nothing.
+    ~EchoCall() override;
+    EchoCall(const EchoCall&) = delete;
+    EchoCall& operator=(const EchoCall&) = delete;
+    EchoCall(EchoCall&&) = delete;
+    EchoCall& operator=(EchoCall&&) = delete;
+
+    [[nodiscard]] NodeKind kind() const noexcept override;
+
+    /// @brief Evaluates `echo` (plan 0002 §3.5).
+    ///
+    /// Order: the evaluation-depth guard at the keyword; the argument, evaluated exactly once
+    /// into an owning local held for the rest of the pseudo-call; then the checks.
+    /// @return A Normal completion whose value is the context's NullObject.
+    /// @throws RuntimeError of kind ArgumentType at the argument's location if the value is not a
+    ///         `String` (nothing is written); RuntimeError of kind OutputWrite at the keyword if
+    ///         ExecutionContext::writeOutput returns a non-empty code (the message contains
+    ///         `standard output` followed by the code's reason text); RuntimeError of kind
+    ///         EvaluationDepthExceeded at the keyword; any error raised by the argument;
+    ///         InternalError; std::bad_alloc.
+    [[nodiscard]] Completion evaluate(ExecutionContext& context,
+                                      const std::shared_ptr<Environment>& environment)
+        const override;
+    void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
+
+    /// @brief The argument expression.
+    /// @pre detachChildren has not been called.
+    /// @throws Nothing.
+    [[nodiscard]] const ASTNode& argument() const noexcept;
+
+private:
+    std::unique_ptr<ASTNode> argument_;
+};
+
+/// @brief `typeof(argument)`: the runtime-type pseudo-call (plan 0002 §3.4, §3.5, §3.8; D3, D8,
+///        D12).
+///
+/// A built-in language construct, not a Philios call (see EchoCall). The parser guarantees
+/// exactly one argument (D17).
+class TypeofCall final : public ASTNode {
+public:
+    /// @param location Location of the `typeof` keyword (the evaluation-depth error is reported
+    ///        there).
+    /// @param argument The single argument expression; ownership is taken.
+    /// @pre @p argument is non-null.
+    /// @throws InternalError if @p argument is null.
+    TypeofCall(SourceLocation location, std::unique_ptr<ASTNode> argument);
+
+    /// @brief Iterative destruction of the argument (plan 0001 §3.9; T2-OWN-2).
+    /// @throws Nothing; allocates nothing.
+    ~TypeofCall() override;
+    TypeofCall(const TypeofCall&) = delete;
+    TypeofCall& operator=(const TypeofCall&) = delete;
+    TypeofCall(TypeofCall&&) = delete;
+    TypeofCall& operator=(TypeofCall&&) = delete;
+
+    [[nodiscard]] NodeKind kind() const noexcept override;
+
+    /// @brief Evaluates `typeof` (plan 0002 §3.5).
+    ///
+    /// Order: the evaluation-depth guard at the keyword, then the argument, evaluated exactly
+    /// once into an owning local. Accepts a value of any runtime class, including `null`.
+    /// @return A Normal completion whose value is a new `String` holding scriptTypeName of the
+    ///         argument's runtime value (the runtime type, never the declared type). A new
+    ///         `String` is created on every evaluation (T2-TYPEOF-8).
+    /// @throws RuntimeError of kind EvaluationDepthExceeded at the keyword; any error raised by
+    ///         the argument; InternalError; std::bad_alloc. `typeof` has no error of its own.
+    [[nodiscard]] Completion evaluate(ExecutionContext& context,
+                                      const std::shared_ptr<Environment>& environment)
+        const override;
+    void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
+
+    /// @brief The argument expression.
+    /// @pre detachChildren has not been called.
+    /// @throws Nothing.
+    [[nodiscard]] const ASTNode& argument() const noexcept;
+
+private:
+    std::unique_ptr<ASTNode> argument_;
+};
+
+/// @brief A call or pseudo-call used as a statement; its result is discarded (plan 0002 §3.3:
+///        `exprStmt := ( callExpr | pseudoCall ) NEWLINE`).
 class ExprStmt final : public ASTNode {
 public:
-    /// @param call The call; ownership is taken. Its location is the statement's.
-    /// @pre @p call is non-null.
-    /// @throws InternalError if @p call is null.
-    explicit ExprStmt(std::unique_ptr<CallExpr> call);
+    /// @param expression The call (CallExpr) or pseudo-call (EchoCall or TypeofCall); ownership
+    ///        is taken. Its location is the statement's.
+    /// @pre @p expression is non-null and its kind() is NodeKind::CallExpr, NodeKind::EchoCall,
+    ///      or NodeKind::TypeofCall.
+    /// @throws InternalError if a precondition is violated.
+    explicit ExprStmt(std::unique_ptr<ASTNode> expression);
 
     /// @throws Nothing; allocates nothing.
     ~ExprStmt() override;
@@ -270,13 +390,13 @@ public:
         const override;
     void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
 
-    /// @brief The call.
+    /// @brief The call or pseudo-call; its kind() is CallExpr, EchoCall, or TypeofCall.
     /// @pre detachChildren has not been called.
     /// @throws Nothing.
-    [[nodiscard]] const CallExpr& call() const noexcept;
+    [[nodiscard]] const ASTNode& expression() const noexcept;
 
 private:
-    std::unique_ptr<CallExpr> call_;
+    std::unique_ptr<ASTNode> expression_;
 };
 
 /// @brief `return [expr]`.
@@ -358,9 +478,9 @@ class Param final : public ASTNode {
 public:
     /// @param location Location of the parameter name.
     /// @param name View into the source buffer.
-    /// @param type The declared type.
+    /// @param type The declared type, including its nullability (plan 0002 §3.4).
     /// @throws Nothing.
-    Param(SourceLocation location, std::string_view name, TypeName type) noexcept;
+    Param(SourceLocation location, std::string_view name, DeclaredType type) noexcept;
 
     [[nodiscard]] NodeKind kind() const noexcept override;
     [[nodiscard]] Completion evaluate(ExecutionContext& context,
@@ -370,12 +490,14 @@ public:
 
     /// @throws Nothing.
     [[nodiscard]] std::string_view name() const noexcept;
+    /// @brief The declared parameter type; checked against each argument by
+    ///        matchesDeclaredType at call time.
     /// @throws Nothing.
-    [[nodiscard]] TypeName type() const noexcept;
+    [[nodiscard]] DeclaredType type() const noexcept;
 
 private:
     std::string_view name_;
-    TypeName type_;
+    DeclaredType type_;
 };
 
 /// @brief `function name(params)[: typeName]:` followed by its body.
@@ -393,8 +515,8 @@ public:
     /// @pre @p body and every element of @p params are non-null.
     /// @throws InternalError if a precondition is violated.
     FunctionDecl(SourceLocation location, std::string_view name,
-                 std::vector<std::unique_ptr<Param>> params, std::optional<TypeName> returnType,
-                 std::unique_ptr<Block> body);
+                 std::vector<std::unique_ptr<Param>> params,
+                 std::optional<DeclaredType> returnType, std::unique_ptr<Block> body);
 
     /// @throws Nothing; allocates nothing.
     ~FunctionDecl() override;
@@ -413,9 +535,10 @@ public:
     [[nodiscard]] std::string_view name() const noexcept;
     /// @throws Nothing.
     [[nodiscard]] const std::vector<std::unique_ptr<Param>>& params() const noexcept;
-    /// @brief The annotation, or no value if omitted.
+    /// @brief The return annotation, including its nullability (plan 0002 §3.4), or no value if
+    ///        omitted.
     /// @throws Nothing.
-    [[nodiscard]] std::optional<TypeName> returnType() const noexcept;
+    [[nodiscard]] std::optional<DeclaredType> returnType() const noexcept;
     /// @pre detachChildren has not been called.
     /// @throws Nothing.
     [[nodiscard]] const Block& body() const noexcept;
@@ -423,7 +546,7 @@ public:
 private:
     std::string_view name_;
     std::vector<std::unique_ptr<Param>> params_;
-    std::optional<TypeName> returnType_;
+    std::optional<DeclaredType> returnType_;
     std::unique_ptr<Block> body_;
 };
 

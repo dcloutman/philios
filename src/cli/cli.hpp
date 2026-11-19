@@ -16,7 +16,8 @@ namespace philios {
 /// `philios: internal error: out of memory`, written without allocating), any other
 /// `std::exception` and finally `catch (...)` (70, fixed text
 /// `philios: internal error: unexpected exception`). Every diagnostic uses the §4 formats and
-/// escapes echoed text. Nothing is written to stdout.
+/// escapes echoed text. Diagnostics go to stderr only; standard output carries only the program's
+/// own output, written by `echo` through the context's writer (plan 0002 §3.6, D13).
 ///
 /// @param body The run to protect; returns the exit status of a run that does not throw.
 ///             Borrowed for the duration of the call.
@@ -39,6 +40,8 @@ namespace philios {
 
 /// @brief Loads `./main.phil`, lexes, parses, and validates the whole file, then runs `main()`.
 ///
+/// Before loading, sets `SIGPIPE` to `SIG_IGN` (ignoreBrokenPipeSignal) and creates the
+/// execution context with writeStandardOutput as its output writer (plan 0002 §3.6, D26).
 /// Pipeline: loadMainSource (§3.2), then Module::load (§3.9), then the interpreter (task 8).
 /// Before task 7 an interim pipeline holds the source in a local `const std::string` that is never
 /// moved while any token or AST node exists (§3.9). Never opens `philios.json` (D35).

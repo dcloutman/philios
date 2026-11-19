@@ -1,2 +1,2 @@
 function main():
-    return "é" -
+    return "é" @

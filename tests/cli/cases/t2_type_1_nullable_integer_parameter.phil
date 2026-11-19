@@ -1,0 +1,6 @@
+function take(x: ?Integer): Integer:
+    return 1
+function main():
+    take(null)
+    take(1)
+    return 0

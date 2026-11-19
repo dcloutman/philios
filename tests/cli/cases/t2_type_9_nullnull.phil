@@ -1,0 +1,9 @@
+function none(): ?Integer:
+    return
+function take(x: ?Integer): String:
+    return typeof(x)
+function obj(): ?Object:
+    return
+function main():
+    echo(take(none()))
+    echo(typeof(obj()))

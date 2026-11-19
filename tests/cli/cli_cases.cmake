@@ -6,6 +6,94 @@
 # T-SEC-3/5..8, T-OWN-1/2/4/5, T-DECL-8/9) are Catch2 tests. T-OWN-3 is these cases run in
 # build-asan, where any ASan/LSan report changes the status or stderr and fails the case.
 
+# Plan 0002 §7 task 1: registers a CLI case that checks stdout bytes or redirects stdout.
+#   philios_cli_stdout_test(<name> [STDOUT_HEX <hex>]
+#                           [STDOUT_MODE capture|dev_full|closed|broken_pipe]
+#                           <any philios_cli_test option>...)
+# Same options and behavior as philios_cli_test (CMakeLists.txt), plus:
+#   STDOUT_HEX   Passed as -DEXPECT_STDOUT_HEX: the exact expected stdout, lowercase hexadecimal.
+#                Omitted means stdout must be empty, as in philios_cli_test.
+#   STDOUT_MODE  Passed as -DSTDOUT_MODE (default capture). For dev_full, give SKIP_LABEL so a
+#                host without /dev/full reports the case as skipped through
+#                SKIP_REGULAR_EXPRESSION.
+#   FIXTURE_DIR  A directory relative to the source tree root (for example
+#                tests/unit/sample-programs/hello-world), passed as the absolute
+#                -DFIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/<dir>. Valid only with MODE copy_folder,
+#                which needs it: the driver copies every file of that directory into the fresh
+#                WORK_DIR and only reads the directory (plan 0002 task 6; architecture decisions
+#                §6 item 7). WORK_DIR stays under the build tree, never the source directory.
+# It registers exactly one add_test named <name> that runs tests/cli/run_case.cmake, with the
+# same WORK_DIR, TIMEOUT, and SKIP_REGULAR_EXPRESSION as philios_cli_test. It lives here because
+# philios_cli_test parses a fixed keyword list and plan 0002 task 1 does not edit CMakeLists.txt.
+# Callers may set further properties on <name> afterwards (for example WILL_FAIL, T2-BUILD-1).
+function(philios_cli_stdout_test name)
+  cmake_parse_arguments(PARSE_ARGV 1 CASE "NO_CRASH"
+      "MODE;FIXTURE;FIXTURE_DIR;STATUS;KIND;CLASS;LINE;COLUMN;MESSAGE;FORBID;SIZE;EXIT_VALUE;NESTING;DEPTH;SKIP_LABEL;STDOUT_HEX;STDOUT_MODE"
+      "ARGS")
+  if(CASE_UNPARSED_ARGUMENTS)
+    message(FATAL_ERROR "philios_cli_stdout_test(${name}): unknown arguments ${CASE_UNPARSED_ARGUMENTS}")
+  endif()
+
+  if(NOT CASE_MODE)
+    set(CASE_MODE file)
+  endif()
+  if(NOT CASE_STDOUT_MODE)
+    set(CASE_STDOUT_MODE capture)
+  endif()
+
+  set(case_args
+      -DPHILIOS_BIN=$<TARGET_FILE:philios>
+      -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli_cases/${name}
+      -DMODE=${CASE_MODE}
+      -DSTDOUT_MODE=${CASE_STDOUT_MODE})
+  if(CASE_FIXTURE)
+    list(APPEND case_args -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/cases/${CASE_FIXTURE})
+  endif()
+  if(CASE_MODE STREQUAL "copy_folder" AND NOT CASE_FIXTURE_DIR)
+    message(FATAL_ERROR "philios_cli_stdout_test(${name}): MODE copy_folder needs FIXTURE_DIR")
+  endif()
+  if(CASE_FIXTURE_DIR)
+    if(NOT CASE_MODE STREQUAL "copy_folder")
+      message(FATAL_ERROR "philios_cli_stdout_test(${name}): FIXTURE_DIR needs MODE copy_folder")
+    endif()
+    list(APPEND case_args -DFIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/${CASE_FIXTURE_DIR})
+  endif()
+  if(CASE_ARGS)
+    string(REPLACE ";" "\;" escaped_args "${CASE_ARGS}")
+    list(APPEND case_args "-DARGS=${escaped_args}")
+  endif()
+  if(CASE_NO_CRASH)
+    list(APPEND case_args -DEXPECT_NO_CRASH=TRUE)
+  else()
+    list(APPEND case_args -DEXPECT_STATUS=${CASE_STATUS} -DEXPECT_KIND=${CASE_KIND})
+  endif()
+  foreach(option CLASS LINE COLUMN SIZE EXIT_VALUE NESTING DEPTH SKIP_LABEL)
+    if(DEFINED CASE_${option})
+      if(option MATCHES "^(CLASS|LINE|COLUMN)$")
+        list(APPEND case_args "-DEXPECT_${option}=${CASE_${option}}")
+      else()
+        list(APPEND case_args "-D${option}=${CASE_${option}}")
+      endif()
+    endif()
+  endforeach()
+  if(DEFINED CASE_MESSAGE)
+    list(APPEND case_args "-DEXPECT_MESSAGE=${CASE_MESSAGE}")
+  endif()
+  if(DEFINED CASE_FORBID)
+    list(APPEND case_args "-DFORBID_MESSAGE=${CASE_FORBID}")
+  endif()
+  if(DEFINED CASE_STDOUT_HEX)
+    list(APPEND case_args "-DEXPECT_STDOUT_HEX=${CASE_STDOUT_HEX}")
+  endif()
+
+  add_test(NAME ${name}
+      COMMAND ${CMAKE_COMMAND} ${case_args} -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/run_case.cmake)
+  set_tests_properties(${name} PROPERTIES TIMEOUT 120)
+  if(CASE_SKIP_LABEL)
+    set_tests_properties(${name} PROPERTIES SKIP_REGULAR_EXPRESSION "${CASE_SKIP_LABEL} SKIPPED: .+")
+  endif()
+endfunction()
+
 # T-CLI-1: any argument is a usage error (64), whatever main.phil holds.
 philios_cli_test(t_cli_1_argument_x FIXTURE cli1_valid_program.phil ARGS x STATUS 64 KIND usage)
 philios_cli_test(t_cli_1_argument_help FIXTURE cli1_valid_program.phil ARGS --help STATUS 64
@@ -70,7 +158,7 @@ philios_cli_test(t_lex_1_truncated_at_eof_in_string FIXTURE lex_1_truncated_at_e
 philios_cli_test(t_lex_1_truncated_at_eof_in_comment FIXTURE lex_1_truncated_at_eof_in_comment.phil STATUS 65 KIND located
     CLASS lexical LINE 3 COLUMN 4)
 
-# T-LEX-2: columns count bytes: `-` after "é" is at byte column 17, not 16.
+# T-LEX-2: columns count bytes: `@` after "é" is at byte column 17, not 16 (plan 0002 T-UPD-1).
 philios_cli_test(t_lex_2_byte_column_after_utf8 FIXTURE lex_2_byte_column_after_utf8.phil STATUS 65 KIND located
     CLASS lexical LINE 2 COLUMN 17)
 
@@ -144,7 +232,7 @@ philios_cli_test(t_lex_4_program_crlf FIXTURE lex_4_program_crlf.phil STATUS 9 K
 philios_cli_test(t_lex_4_program_cr FIXTURE lex_4_program_cr.phil STATUS 9 KIND empty)
 philios_cli_test(t_lex_4_program_mixed FIXTURE lex_4_program_mixed.phil STATUS 9 KIND empty)
 
-# T-LEX-4: an unexpected `-` on line 3 in each style is at line 3, column 10.
+# T-LEX-4: an unexpected `@` on line 3 in each style is at line 3, column 10 (plan 0002 T-UPD-1).
 philios_cli_test(t_lex_4_error_line_3_lf FIXTURE lex_4_error_line_3_lf.phil STATUS 65 KIND located
     CLASS lexical LINE 3 COLUMN 10)
 philios_cli_test(t_lex_4_error_line_3_crlf FIXTURE lex_4_error_line_3_crlf.phil STATUS 65 KIND located
@@ -209,8 +297,8 @@ philios_cli_test(t_lex_8_int64_max_accepted FIXTURE lex_8_int64_max_accepted.phi
 philios_cli_test(t_lex_8_zero_accepted FIXTURE lex_8_zero_accepted.phil STATUS 0 KIND empty)
 philios_cli_test(t_lex_8_out_of_range FIXTURE lex_8_out_of_range.phil STATUS 65 KIND located
     CLASS lexical LINE 2 COLUMN 12)
-philios_cli_test(t_lex_8_negative_literal FIXTURE lex_8_negative_literal.phil STATUS 65 KIND located
-    CLASS lexical LINE 2 COLUMN 12)
+# Plan 0002 T-UPD-2: `return -1` is now a negative literal; main's -1 exits 255 (T2-LEX-1).
+philios_cli_test(t_lex_8_negative_literal FIXTURE lex_8_negative_literal.phil STATUS 255 KIND empty)
 philios_cli_test(t_lex_8_leading_zero_007 FIXTURE lex_8_leading_zero_007.phil STATUS 65 KIND located
     CLASS lexical LINE 2 COLUMN 12)
 philios_cli_test(t_lex_8_leading_zero_00 FIXTURE lex_8_leading_zero_00.phil STATUS 65 KIND located
@@ -333,6 +421,29 @@ philios_cli_test(t_lex_10_import_as_function_name FIXTURE lex_10_import_as_funct
 philios_cli_test(t_lex_10_import_as_parameter_name FIXTURE lex_10_import_as_parameter_name.phil STATUS 65 KIND located
     CLASS syntax LINE 3 COLUMN 13)
 
+# Plan 0002 T-UPD-3 (§3.2, D2, D20): the five words reserved by plan 0002, as a function name
+# (3:10) and a parameter name (3:13), so T-LEX-10 covers all 28 reserved words.
+philios_cli_test(t_lex_10_not_as_function_name FIXTURE lex_10_not_as_function_name.phil STATUS 65 KIND located
+    CLASS syntax LINE 3 COLUMN 10)
+philios_cli_test(t_lex_10_not_as_parameter_name FIXTURE lex_10_not_as_parameter_name.phil STATUS 65 KIND located
+    CLASS syntax LINE 3 COLUMN 13)
+philios_cli_test(t_lex_10_goto_as_function_name FIXTURE lex_10_goto_as_function_name.phil STATUS 65 KIND located
+    CLASS syntax LINE 3 COLUMN 10)
+philios_cli_test(t_lex_10_goto_as_parameter_name FIXTURE lex_10_goto_as_parameter_name.phil STATUS 65 KIND located
+    CLASS syntax LINE 3 COLUMN 13)
+philios_cli_test(t_lex_10_isa_as_function_name FIXTURE lex_10_isa_as_function_name.phil STATUS 65 KIND located
+    CLASS syntax LINE 3 COLUMN 10)
+philios_cli_test(t_lex_10_isa_as_parameter_name FIXTURE lex_10_isa_as_parameter_name.phil STATUS 65 KIND located
+    CLASS syntax LINE 3 COLUMN 13)
+philios_cli_test(t_lex_10_echo_as_function_name FIXTURE lex_10_echo_as_function_name.phil STATUS 65 KIND located
+    CLASS syntax LINE 3 COLUMN 10)
+philios_cli_test(t_lex_10_echo_as_parameter_name FIXTURE lex_10_echo_as_parameter_name.phil STATUS 65 KIND located
+    CLASS syntax LINE 3 COLUMN 13)
+philios_cli_test(t_lex_10_typeof_as_function_name FIXTURE lex_10_typeof_as_function_name.phil STATUS 65 KIND located
+    CLASS syntax LINE 3 COLUMN 10)
+philios_cli_test(t_lex_10_typeof_as_parameter_name FIXTURE lex_10_typeof_as_parameter_name.phil STATUS 65 KIND located
+    CLASS syntax LINE 3 COLUMN 13)
+
 # T-LEX-10: `Integer2`, `integer`, and `_if` are ordinary names.
 philios_cli_test(t_lex_10_near_words_as_function_names FIXTURE lex_10_near_words_as_function_names.phil STATUS 0 KIND empty)
 philios_cli_test(t_lex_10_near_words_as_parameter_names FIXTURE lex_10_near_words_as_parameter_names.phil STATUS 0 KIND empty)
@@ -346,6 +457,404 @@ philios_cli_test(t_lex_11_comment_splits_literal_identifier FIXTURE lex_11_comme
 philios_cli_test(t_lex_11_comment_before_indentation FIXTURE lex_11_comment_before_indentation.phil STATUS 65 KIND located
     CLASS syntax LINE 3 COLUMN 10)
 philios_cli_test(t_lex_11_comment_after_indentation FIXTURE lex_11_comment_after_indentation.phil STATUS 1 KIND empty)
+
+# Plan 0002 T2-LEX-1 (§3.2, §3.7, D1, D4-D6, D21): negative literals run; exit = result mod 256.
+philios_cli_test(t2_lex_1_return_minus_1 FIXTURE t2_lex_1_return_minus_1.phil STATUS 255 KIND empty)
+philios_cli_test(t2_lex_1_return_minus_255 FIXTURE t2_lex_1_return_minus_255.phil STATUS 1 KIND empty)
+philios_cli_test(t2_lex_1_return_minus_256 FIXTURE t2_lex_1_return_minus_256.phil STATUS 0 KIND empty)
+philios_cli_test(t2_lex_1_return_int64_min FIXTURE t2_lex_1_return_int64_min.phil STATUS 0 KIND empty)
+philios_cli_test(t2_lex_1_comment_before_literal FIXTURE t2_lex_1_comment_before_literal.phil STATUS 255 KIND empty)
+philios_cli_test(t2_lex_1_continuation_before_literal FIXTURE t2_lex_1_continuation_before_literal.phil STATUS 255 KIND empty)
+philios_cli_test(t2_lex_1_call_arguments FIXTURE t2_lex_1_call_arguments.phil STATUS 254 KIND empty)
+
+# Plan 0002 T2-LEX-2 (§3.2, D6, D7): lexical errors at the `-` of `return <literal>` (2:12); the
+# positive literal 9223372036854775808 is still the plan 0001 lexical error (2:12).
+philios_cli_test(t2_lex_2_minus_9223372036854775809 FIXTURE t2_lex_2_minus_9223372036854775809.phil STATUS 65 KIND located
+    CLASS lexical LINE 2 COLUMN 12)
+philios_cli_test(t2_lex_2_minus_twenty_nines FIXTURE t2_lex_2_minus_twenty_nines.phil STATUS 65 KIND located
+    CLASS lexical LINE 2 COLUMN 12)
+philios_cli_test(t2_lex_2_minus_0 FIXTURE t2_lex_2_minus_0.phil STATUS 65 KIND located
+    CLASS lexical LINE 2 COLUMN 12)
+philios_cli_test(t2_lex_2_minus_00 FIXTURE t2_lex_2_minus_00.phil STATUS 65 KIND located
+    CLASS lexical LINE 2 COLUMN 12)
+philios_cli_test(t2_lex_2_minus_007 FIXTURE t2_lex_2_minus_007.phil STATUS 65 KIND located
+    CLASS lexical LINE 2 COLUMN 12)
+philios_cli_test(t2_lex_2_minus_1abc FIXTURE t2_lex_2_minus_1abc.phil STATUS 65 KIND located
+    CLASS lexical LINE 2 COLUMN 12)
+philios_cli_test(t2_lex_2_positive_9223372036854775808 FIXTURE t2_lex_2_positive_9223372036854775808.phil STATUS 65 KIND located
+    CLASS lexical LINE 2 COLUMN 12)
+
+# Plan 0002 T2-LEX-3 (§3.2, §4, D5, D22): every `-` that does not begin a negative literal is a
+# Minus token, a syntax error at the (first) `-`.
+philios_cli_test(t2_lex_3_minus_space_1 FIXTURE t2_lex_3_minus_space_1.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 12)
+philios_cli_test(t2_lex_3_minus_minus_1 FIXTURE t2_lex_3_minus_minus_1.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 12)
+philios_cli_test(t2_lex_3_minus_abc FIXTURE t2_lex_3_minus_abc.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 12)
+philios_cli_test(t2_lex_3_minus_comment_1 FIXTURE t2_lex_3_minus_comment_1.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 12)
+philios_cli_test(t2_lex_3_minus_end_of_line FIXTURE t2_lex_3_minus_end_of_line.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 12)
+philios_cli_test(t2_lex_3_pass_minus_1 FIXTURE t2_lex_3_pass_minus_1.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 10)
+philios_cli_test(t2_lex_3_statement_minus_1 FIXTURE t2_lex_3_statement_minus_1.phil STATUS 65 KIND located
+    CLASS syntax LINE 3 COLUMN 5)
+philios_cli_test(t2_lex_3_identifier_minus_1 FIXTURE t2_lex_3_identifier_minus_1.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 15)
+philios_cli_test(t2_lex_3_identifier_space_minus_1 FIXTURE t2_lex_3_identifier_space_minus_1.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 16)
+philios_cli_test(t2_lex_3_call_minus_1 FIXTURE t2_lex_3_call_minus_1.phil STATUS 65 KIND located
+    CLASS syntax LINE 4 COLUMN 16)
+philios_cli_test(t2_lex_3_call_minus_0 FIXTURE t2_lex_3_call_minus_0.phil STATUS 65 KIND located
+    CLASS syntax LINE 4 COLUMN 16)
+
+# Plan 0002 T2-LEX-7 (§3.2, §4): `?` outside a type is a syntax error at the `?` (2:12).
+philios_cli_test(t2_lex_7_question_outside_type FIXTURE t2_lex_7_question_outside_type.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 12)
+
+# Plan 0002 T2-TYPE-1 (§3.4, D9): subtype acceptance and explicit nullability; each program runs.
+philios_cli_test(t2_type_1_object_accepts_values FIXTURE t2_type_1_object_accepts_values.phil STATUS 3 KIND empty)
+philios_cli_test(t2_type_1_nullable_integer_parameter FIXTURE t2_type_1_nullable_integer_parameter.phil STATUS 0 KIND empty)
+philios_cli_test(t2_type_1_nullable_string_parameter FIXTURE t2_type_1_nullable_string_parameter.phil STATUS 0 KIND empty)
+philios_cli_test(t2_type_1_nullable_function_parameter FIXTURE t2_type_1_nullable_function_parameter.phil STATUS 0 KIND empty)
+philios_cli_test(t2_type_1_nullable_object_parameter FIXTURE t2_type_1_nullable_object_parameter.phil STATUS 0 KIND empty)
+philios_cli_test(t2_type_1_object_function_returns_string FIXTURE t2_type_1_object_function_returns_string.phil STATUS 0 KIND empty)
+philios_cli_test(t2_type_1_nullable_integer_function_returns_null FIXTURE t2_type_1_nullable_integer_function_returns_null.phil STATUS 0 KIND empty)
+philios_cli_test(t2_type_1_nullable_object_function_returns_null FIXTURE t2_type_1_nullable_object_function_returns_null.phil STATUS 0 KIND empty)
+
+# Plan 0002 T2-TYPE-2 (§3.4): calls through `Object` and `?Function` parameters; a non-Function
+# value (here `null`) is the not-callable error at the callee (2:12).
+philios_cli_test(t2_type_2_call_through_object FIXTURE t2_type_2_call_through_object.phil STATUS 7 KIND empty)
+philios_cli_test(t2_type_2_call_null_through_nullable_function FIXTURE t2_type_2_call_null_through_nullable_function.phil STATUS 70 KIND located
+    CLASS runtime LINE 2 COLUMN 12)
+
+# Plan 0002 T2-TYPE-3 (§3.4, D29): runtime type errors at the argument, at the `return`, or (falling
+# off the end of an `Object` or `?T` function) at the function name.
+philios_cli_test(t2_type_3_null_to_object_parameter FIXTURE t2_type_3_null_to_object_parameter.phil STATUS 70 KIND located
+    CLASS runtime LINE 4 COLUMN 17)
+philios_cli_test(t2_type_3_string_to_nullable_integer_parameter FIXTURE t2_type_3_string_to_nullable_integer_parameter.phil STATUS 70 KIND located
+    CLASS runtime LINE 4 COLUMN 17)
+philios_cli_test(t2_type_3_object_function_returns_null FIXTURE t2_type_3_object_function_returns_null.phil STATUS 70 KIND located
+    CLASS runtime LINE 2 COLUMN 5)
+philios_cli_test(t2_type_3_nullable_integer_function_returns_string FIXTURE t2_type_3_nullable_integer_function_returns_string.phil STATUS 70 KIND located
+    CLASS runtime LINE 2 COLUMN 5)
+philios_cli_test(t2_type_3_object_function_falls_off_end FIXTURE t2_type_3_object_function_falls_off_end.phil STATUS 70 KIND located
+    CLASS runtime LINE 1 COLUMN 10)
+philios_cli_test(t2_type_3_nullable_integer_function_falls_off_end FIXTURE t2_type_3_nullable_integer_function_falls_off_end.phil STATUS 70 KIND located
+    CLASS runtime LINE 1 COLUMN 10)
+
+# Plan 0002 T2-TYPE-4 (§3.3, D10, D11, D25): type-position syntax errors. A `?` not adjacent to the
+# next token fails at the `?` (column 15); a non-`nullableBase` token after an adjacent `?` fails at
+# that token (column 16); a non-declarable type word fails at the word (column 15).
+philios_cli_test(t2_type_4_parameter_null_after_question FIXTURE t2_type_4_parameter_null_after_question.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 16)
+philios_cli_test(t2_type_4_parameter_question_space_integer FIXTURE t2_type_4_parameter_question_space_integer.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 15)
+philios_cli_test(t2_type_4_parameter_question_tab_integer FIXTURE t2_type_4_parameter_question_tab_integer.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 15)
+philios_cli_test(t2_type_4_parameter_question_space_object FIXTURE t2_type_4_parameter_question_space_object.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 15)
+philios_cli_test(t2_type_4_parameter_question_comment_integer FIXTURE t2_type_4_parameter_question_comment_integer.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 15)
+philios_cli_test(t2_type_4_parameter_question_right_paren FIXTURE t2_type_4_parameter_question_right_paren.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 16)
+philios_cli_test(t2_type_4_parameter_question_question_integer FIXTURE t2_type_4_parameter_question_question_integer.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 16)
+philios_cli_test(t2_type_4_parameter_null_object FIXTURE t2_type_4_parameter_null_object.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 15)
+philios_cli_test(t2_type_4_parameter_immutable_object FIXTURE t2_type_4_parameter_immutable_object.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 15)
+philios_cli_test(t2_type_4_parameter_unsigned_integer FIXTURE t2_type_4_parameter_unsigned_integer.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 15)
+philios_cli_test(t2_type_4_parameter_float FIXTURE t2_type_4_parameter_float.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 15)
+philios_cli_test(t2_type_4_parameter_question_null_object FIXTURE t2_type_4_parameter_question_null_object.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 16)
+philios_cli_test(t2_type_4_return_null_object FIXTURE t2_type_4_return_null_object.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 15)
+philios_cli_test(t2_type_4_return_null_after_question FIXTURE t2_type_4_return_null_after_question.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 16)
+philios_cli_test(t2_type_4_return_question_space_integer FIXTURE t2_type_4_return_question_space_integer.phil STATUS 65 KIND located
+    CLASS syntax LINE 1 COLUMN 15)
+
+# Plan 0002 T2-TYPE-5 (§3.4, D23, D29): `main` annotations other than `Integer` fail at the `main`
+# name (1:10); a bare `return` in an `Object` function fails at the `return` (2:5); a bare
+# `return` in a never-called `?Integer` function is accepted.
+philios_cli_test(t2_type_5_main_annotated_nullable_integer FIXTURE t2_type_5_main_annotated_nullable_integer.phil STATUS 65 KIND located
+    CLASS declaration LINE 1 COLUMN 10)
+philios_cli_test(t2_type_5_main_annotated_object FIXTURE t2_type_5_main_annotated_object.phil STATUS 65 KIND located
+    CLASS declaration LINE 1 COLUMN 10)
+philios_cli_test(t2_type_5_main_annotated_nullable_object FIXTURE t2_type_5_main_annotated_nullable_object.phil STATUS 65 KIND located
+    CLASS declaration LINE 1 COLUMN 10)
+philios_cli_test(t2_type_5_bare_return_uncalled_object FIXTURE t2_type_5_bare_return_uncalled_object.phil STATUS 65 KIND located
+    CLASS declaration LINE 2 COLUMN 5)
+philios_cli_test(t2_type_5_bare_return_uncalled_nullable_integer FIXTURE t2_type_5_bare_return_uncalled_nullable_integer.phil STATUS 0 KIND empty)
+
+# Plan 0002 T2-TYPE-9 (§3.4, D29): bare `return` in `?T` functions. The `nullnull` program needs
+# `echo` and `typeof` and is registered with plan 0002 task 5 (architecture decisions §6, item 1),
+# after the T2-TYPEOF cases below.
+# Plan 0001 T-DECL-4 and the `null` function cases in this file run unchanged.
+philios_cli_test(t2_type_9_nullable_string_pass_then_bare_return FIXTURE t2_type_9_nullable_string_pass_then_bare_return.phil STATUS 0 KIND empty)
+philios_cli_test(t2_type_9_statement_after_bare_return FIXTURE t2_type_9_statement_after_bare_return.phil STATUS 65 KIND located
+    CLASS declaration LINE 3 COLUMN 5)
+philios_cli_test(t2_type_9_nullable_integer_falls_off_end FIXTURE t2_type_9_nullable_integer_falls_off_end.phil STATUS 70 KIND located
+    CLASS runtime LINE 1 COLUMN 10)
+
+# ----------------------------------------------------------------------------------------------
+# Plan 0002 task 5: pseudo-functions (§3.3, §3.5, §3.6, §4). Stdout is checked exactly with
+# STDOUT_HEX; cases without STDOUT_HEX require empty stdout, so every syntax and declaration error
+# below also checks that nothing was written (§4: errors before execution leave stdout empty).
+# ----------------------------------------------------------------------------------------------
+
+# T2-ECHO-1: the developer's Hello World writes exactly `Hello World` (no line break) and exits 1.
+philios_cli_stdout_test(t2_echo_1_hello_world FIXTURE t2_echo_1_hello_world.phil STATUS 1 KIND empty
+    STDOUT_HEX 48656c6c6f20576f726c64)
+
+# T2-ECHO-2 (D24): exact bytes, no transcoding or escaping; an empty string writes nothing.
+philios_cli_stdout_test(t2_echo_2_escapes FIXTURE t2_echo_2_escapes.phil STATUS 0 KIND empty
+    STDOUT_HEX 610a62095c22)
+philios_cli_test(t2_echo_2_empty_string FIXTURE t2_echo_2_empty_string.phil STATUS 0 KIND empty)
+philios_cli_stdout_test(t2_echo_2_utf8 FIXTURE t2_echo_2_utf8.phil STATUS 0 KIND empty
+    STDOUT_HEX c3a9)
+philios_cli_stdout_test(t2_echo_2_two_echoes FIXTURE t2_echo_2_two_echoes.phil STATUS 0 KIND empty
+    STDOUT_HEX 6162)
+
+# T2-ECHO-3: `echo` returns the context's `null`.
+philios_cli_stdout_test(t2_echo_3_typeof_of_echo_result FIXTURE t2_echo_3_typeof_of_echo_result.phil STATUS 0 KIND empty
+    STDOUT_HEX 786e756c6c)
+philios_cli_stdout_test(t2_echo_3_echo_result_to_null_parameter FIXTURE t2_echo_3_echo_result_to_null_parameter.phil STATUS 0 KIND empty
+    STDOUT_HEX 78)
+philios_cli_stdout_test(t2_echo_3_null_function_returns_echo FIXTURE t2_echo_3_null_function_returns_echo.phil STATUS 0 KIND empty
+    STDOUT_HEX 78)
+
+# T2-ECHO-4 (D8, D16, D17, D20): syntax errors in a `main` body on line 2, with empty stdout. The
+# argument count is reported at the keyword (2:5); an integer or `null` literal argument at its
+# first byte (2:10); a bare `echo` at the word. `echo` and `typeof` as function and parameter
+# names are T-UPD-3 (lex_10_*).
+philios_cli_test(t2_echo_4_no_arguments FIXTURE t2_echo_4_no_arguments.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 5)
+philios_cli_test(t2_echo_4_two_arguments FIXTURE t2_echo_4_two_arguments.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 5)
+philios_cli_test(t2_echo_4_integer_literal FIXTURE t2_echo_4_integer_literal.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 10)
+philios_cli_test(t2_echo_4_negative_literal FIXTURE t2_echo_4_negative_literal.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 10)
+philios_cli_test(t2_echo_4_null_literal FIXTURE t2_echo_4_null_literal.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 10)
+philios_cli_test(t2_echo_4_max_integer_literal FIXTURE t2_echo_4_max_integer_literal.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 10)
+philios_cli_test(t2_echo_4_bare_statement FIXTURE t2_echo_4_bare_statement.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 5)
+philios_cli_test(t2_echo_4_return_bare_echo FIXTURE t2_echo_4_return_bare_echo.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 12)
+
+# T2-ECHO-5 (D15, D17): a non-`String` argument is a runtime argument-type error at the
+# argument's first byte; output already written stays on stdout.
+philios_cli_stdout_test(t2_echo_5_integer_parameter FIXTURE t2_echo_5_integer_parameter.phil STATUS 70 KIND located
+    CLASS runtime LINE 2 COLUMN 10 STDOUT_HEX 61)
+philios_cli_test(t2_echo_5_integer_call_result FIXTURE t2_echo_5_integer_call_result.phil STATUS 70 KIND located
+    CLASS runtime LINE 4 COLUMN 10)
+philios_cli_test(t2_echo_5_object_holding_integer FIXTURE t2_echo_5_object_holding_integer.phil STATUS 70 KIND located
+    CLASS runtime LINE 2 COLUMN 10)
+philios_cli_test(t2_echo_5_function_value FIXTURE t2_echo_5_function_value.phil STATUS 70 KIND located
+    CLASS runtime LINE 4 COLUMN 10)
+philios_cli_stdout_test(t2_echo_5_echo_result FIXTURE t2_echo_5_echo_result.phil STATUS 70 KIND located
+    CLASS runtime LINE 2 COLUMN 10 STDOUT_HEX 78)
+philios_cli_stdout_test(t2_echo_5_object_holding_string FIXTURE t2_echo_5_object_holding_string.phil STATUS 0 KIND empty
+    STDOUT_HEX 6f6b)
+
+# T2-ECHO-6 (D18, D26): output failures are the runtime output-write error at the `echo` keyword
+# (2:5), with `standard output` in the message. dev_full is skipped where /dev/full is absent.
+# The broken-pipe program (generated) must fail with that error, not by SIGPIPE and not with the
+# call-depth error.
+philios_cli_stdout_test(t2_echo_6_dev_full FIXTURE t2_echo_6_echo_x.phil STDOUT_MODE dev_full
+    SKIP_LABEL T2-ECHO-6 STATUS 70 KIND located CLASS runtime LINE 2 COLUMN 5
+    MESSAGE "standard output")
+philios_cli_stdout_test(t2_echo_6_closed FIXTURE t2_echo_6_echo_x.phil STDOUT_MODE closed
+    STATUS 70 KIND located CLASS runtime LINE 2 COLUMN 5 MESSAGE "standard output")
+philios_cli_stdout_test(t2_echo_6_broken_pipe MODE broken_pipe_program STDOUT_MODE broken_pipe
+    STATUS 70 KIND located CLASS runtime LINE 2 COLUMN 5 MESSAGE "standard output"
+    FORBID "call depth exceeded")
+
+# T2-ECHO-7 (§4): validation runs before any `echo`, so a declaration error leaves stdout empty.
+philios_cli_test(t2_echo_7_declaration_error_before_echo FIXTURE t2_echo_7_declaration_error_before_echo.phil STATUS 65 KIND located
+    CLASS declaration LINE 4 COLUMN 12)
+
+# T2-TYPEOF-1: the developer's examples.
+philios_cli_stdout_test(t2_typeof_1_string FIXTURE t2_typeof_1_string.phil STATUS 1 KIND empty
+    STDOUT_HEX 537472696e67)
+philios_cli_stdout_test(t2_typeof_1_integer FIXTURE t2_typeof_1_integer.phil STATUS 1 KIND empty
+    STDOUT_HEX 496e7465676572)
+
+# T2-TYPEOF-2 (D12): runtime type names; stdout `IntegernullFunctionIntegerIntegernullString`.
+philios_cli_stdout_test(t2_typeof_2_runtime_types FIXTURE t2_typeof_2_runtime_types.phil STATUS 0 KIND empty
+    STDOUT_HEX 496e74656765726e756c6c46756e6374696f6e496e7465676572496e74656765726e756c6c537472696e67)
+
+# T2-TYPEOF-3: the result is a `String`, accepted by a `String` parameter and returned from a
+# `String` function (exit 4).
+philios_cli_test(t2_typeof_3_string_result FIXTURE t2_typeof_3_string_result.phil STATUS 4 KIND empty)
+
+# T2-TYPEOF-4 (D8, D17, D20): syntax errors in a `main` body on line 2: the argument count at the
+# `typeof` keyword (2:10), a bare pseudo-function name at the word (2:17), and `return typeof` in a
+# `Function` function at the word (2:12).
+philios_cli_test(t2_typeof_4_no_arguments FIXTURE t2_typeof_4_no_arguments.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 10)
+philios_cli_test(t2_typeof_4_two_arguments FIXTURE t2_typeof_4_two_arguments.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 10)
+philios_cli_test(t2_typeof_4_bare_echo_argument FIXTURE t2_typeof_4_bare_echo_argument.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 17)
+philios_cli_test(t2_typeof_4_bare_typeof_argument FIXTURE t2_typeof_4_bare_typeof_argument.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 17)
+philios_cli_test(t2_typeof_4_return_bare_typeof FIXTURE t2_typeof_4_return_bare_typeof.phil STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 12)
+
+# T2-TYPEOF-5 (§3.5): the argument is validated like any expression (2:17).
+philios_cli_test(t2_typeof_5_main_argument FIXTURE t2_typeof_5_main_argument.phil STATUS 65 KIND located
+    CLASS declaration LINE 2 COLUMN 17)
+philios_cli_test(t2_typeof_5_undefined_argument FIXTURE t2_typeof_5_undefined_argument.phil STATUS 65 KIND located
+    CLASS declaration LINE 2 COLUMN 17)
+
+# T2-TYPEOF-6 (plan 0001 D7): pseudo-call argument lists count toward the nesting limit. Nesting
+# 255 and 256 write `String`; 257 fails at the `(` of the 255th `typeof` (2:1794).
+philios_cli_stdout_test(t2_typeof_6_nesting_255 MODE pseudo_nesting NESTING 255 STATUS 0 KIND empty
+    STDOUT_HEX 537472696e67)
+philios_cli_stdout_test(t2_typeof_6_nesting_256 MODE pseudo_nesting NESTING 256 STATUS 0 KIND empty
+    STDOUT_HEX 537472696e67)
+philios_cli_test(t2_typeof_6_nesting_257 MODE pseudo_nesting NESTING 257 STATUS 65 KIND located
+    CLASS syntax LINE 2 COLUMN 1794)
+
+# T2-TYPEOF-7: a `typeof` statement runs and writes nothing.
+philios_cli_test(t2_typeof_7_statement FIXTURE t2_typeof_7_statement.phil STATUS 0 KIND empty)
+
+# T2-TYPE-9 (§3.4, D29), the `nullnull` program: a bare `return` in a `?T` function returns `null`.
+philios_cli_stdout_test(t2_type_9_nullnull FIXTURE t2_type_9_nullnull.phil STATUS 0 KIND empty
+    STDOUT_HEX 6e756c6c6e756c6c)
+
+# T2-OWN-1: like plan 0001 T-OWN-3, these cases run in build-asan, where any ASan or LSan report
+# changes the status or stderr and fails the case: a normal echo and exit (t2_echo_1_hello_world),
+# a pseudo-call syntax error (t2_echo_4_*, t2_typeof_4_*), the `echo` argument-type error
+# (t2_echo_5_*), and the output-write error (t2_echo_6_closed, t2_echo_6_broken_pipe, and
+# t2_echo_6_dev_full where /dev/full exists).
+
+# T2-BUILD-1: driver self-checks, registered WILL_FAIL. The program writes `x`; the first case
+# expects `y` (one byte different) and the second expects empty stdout. Both must fail, so a driver
+# that stopped checking stdout is detected. Plan 0001 T-BUILD-6 (POSIX confinement) still covers
+# src/cli/standard_output.cpp.
+philios_cli_stdout_test(t2_build_1_stdout_hex_mismatch FIXTURE t2_echo_6_echo_x.phil STATUS 0 KIND empty
+    STDOUT_HEX 79)
+set_tests_properties(t2_build_1_stdout_hex_mismatch PROPERTIES WILL_FAIL TRUE)
+philios_cli_stdout_test(t2_build_1_unexpected_stdout FIXTURE t2_echo_6_echo_x.phil STATUS 0 KIND empty)
+set_tests_properties(t2_build_1_unexpected_stdout PROPERTIES WILL_FAIL TRUE)
+
+# T2-DOC-1 (plan 0002 §8, task 6; architecture decisions §6 items 3 and 7): the Hello World sample
+# (main.phil and philios.json, a copy of docs/examples/hello_world/) is copied into a fresh WORK_DIR
+# and run there; it writes exactly `Hello World` and exits 1. The sample directory is only read.
+philios_cli_stdout_test(t2_doc_1_hello_world_example MODE copy_folder
+    FIXTURE_DIR tests/unit/sample-programs/hello-world STATUS 1 KIND empty
+    STDOUT_HEX 48656c6c6f20576f726c64)
+
+# T2-DOC-1 driver self-check (task 6 code review round 1, High finding): MODE copy_folder must
+# reject a WORK_DIR that aliases FIXTURE_DIR through a symlink, in either direction, including a
+# WORK_DIR that does not exist yet beneath a symlinked parent. The check works only on a temporary
+# copy of the sample under the build tree, never on tests/unit/sample-programs/hello-world/ or
+# docs/examples/hello_world/. Each rejected run must fail with the overlap message and leave the
+# copy byte-for-byte unchanged; one non-overlapping run through a symlinked FIXTURE_DIR must pass.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/cli_cases/copy_folder_alias_check.cmake" [==[
+# Generated from tests/cli/cli_cases.cmake. Inputs: PHILIOS_BIN, RUN_CASE, SAMPLE_DIR, ROOT.
+foreach(required PHILIOS_BIN RUN_CASE SAMPLE_DIR ROOT)
+  if(NOT DEFINED ${required} OR "${${required}}" STREQUAL "")
+    message(FATAL_ERROR "copy_folder_alias_check: ${required} is required")
+  endif()
+endforeach()
+file(REMOVE_RECURSE "${ROOT}")
+file(MAKE_DIRECTORY "${ROOT}/outer")
+file(COPY "${SAMPLE_DIR}/" DESTINATION "${ROOT}/outer/source")
+file(CREATE_LINK "${ROOT}/outer/source" "${ROOT}/alias" SYMBOLIC)
+file(CREATE_LINK "${ROOT}/outer" "${ROOT}/outer_alias" SYMBOLIC)
+
+# Lists every entry under the temporary copy, with a SHA-256 for each file.
+function(snapshot out_var)
+  file(GLOB_RECURSE entries LIST_DIRECTORIES true RELATIVE "${ROOT}/outer" "${ROOT}/outer/*")
+  list(SORT entries)
+  set(result "")
+  foreach(entry IN LISTS entries)
+    if(IS_DIRECTORY "${ROOT}/outer/${entry}")
+      string(APPEND result "${entry}/\n")
+    else()
+      file(SHA256 "${ROOT}/outer/${entry}" digest)
+      string(APPEND result "${entry} ${digest}\n")
+    endif()
+  endforeach()
+  set(${out_var} "${result}" PARENT_SCOPE)
+endfunction()
+
+snapshot(before)
+if(NOT before MATCHES "main\\.phil" OR NOT before MATCHES "philios\\.json")
+  message(FATAL_ERROR "copy_folder_alias_check: the temporary copy is incomplete:\n${before}")
+endif()
+
+# Each entry is <FIXTURE_DIR>|<WORK_DIR>, relative to ROOT.
+set(rejected_cases
+    "outer/source|alias/new-work"
+    "outer/source|alias/missing/deeper"
+    "outer/source|alias"
+    "outer/source|outer_alias"
+    "outer/source|outer_alias/source/new-work"
+    "alias|outer/source/new-work"
+    "alias|outer")
+foreach(rejected_case IN LISTS rejected_cases)
+  string(REPLACE "|" ";" parts "${rejected_case}")
+  list(GET parts 0 fixture_dir)
+  list(GET parts 1 work_dir)
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" "-DPHILIOS_BIN=${PHILIOS_BIN}" -DMODE=copy_folder
+            "-DFIXTURE_DIR=${ROOT}/${fixture_dir}" "-DWORK_DIR=${ROOT}/${work_dir}"
+            -DEXPECT_STATUS=1 -DEXPECT_KIND=empty -P "${RUN_CASE}"
+    RESULT_VARIABLE status
+    OUTPUT_VARIABLE out
+    ERROR_VARIABLE err)
+  if(status EQUAL 0)
+    message(FATAL_ERROR "copy_folder_alias_check: '${rejected_case}' was accepted")
+  endif()
+  string(REGEX REPLACE "[ \t\r\n]+" " " err_flat "${err}")
+  if(NOT err_flat MATCHES "must not be, contain, or lie inside FIXTURE_DIR")
+    message(FATAL_ERROR
+            "copy_folder_alias_check: '${rejected_case}' failed without the overlap message:\n${err}")
+  endif()
+  snapshot(after)
+  if(NOT after STREQUAL before)
+    message(FATAL_ERROR
+            "copy_folder_alias_check: '${rejected_case}' changed the source copy:\n${before}--- now ---\n${after}")
+  endif()
+  if(NOT IS_SYMLINK "${ROOT}/alias" OR NOT IS_SYMLINK "${ROOT}/outer_alias")
+    message(FATAL_ERROR "copy_folder_alias_check: '${rejected_case}' removed a symlink")
+  endif()
+endforeach()
+
+# Control: a separate WORK_DIR with a symlinked FIXTURE_DIR is accepted and runs the sample.
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" "-DPHILIOS_BIN=${PHILIOS_BIN}" -DMODE=copy_folder
+          "-DFIXTURE_DIR=${ROOT}/alias" "-DWORK_DIR=${ROOT}/work" -DEXPECT_STATUS=1
+          -DEXPECT_KIND=empty -DEXPECT_STDOUT_HEX=48656c6c6f20576f726c64 -P "${RUN_CASE}"
+  RESULT_VARIABLE status
+  OUTPUT_VARIABLE out
+  ERROR_VARIABLE err)
+if(NOT status EQUAL 0)
+  message(FATAL_ERROR "copy_folder_alias_check: the non-overlapping control run failed:\n${out}${err}")
+endif()
+snapshot(after)
+if(NOT after STREQUAL before)
+  message(FATAL_ERROR "copy_folder_alias_check: the control run changed the source copy")
+endif()
+]==])
+add_test(NAME t2_doc_1_copy_folder_rejects_alias
+    COMMAND ${CMAKE_COMMAND} -DPHILIOS_BIN=$<TARGET_FILE:philios>
+            -DRUN_CASE=${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/run_case.cmake
+            -DSAMPLE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/sample-programs/hello-world
+            -DROOT=${CMAKE_CURRENT_BINARY_DIR}/cli_cases/t2_doc_1_copy_folder_rejects_alias
+            -P ${CMAKE_CURRENT_BINARY_DIR}/cli_cases/copy_folder_alias_check.cmake)
+set_tests_properties(t2_doc_1_copy_folder_rejects_alias PROPERTIES TIMEOUT 120)
 
 # T-PARSE-1 (D11): empty and comment-only bodies are rejected at the next token.
 philios_cli_test(t_parse_1_empty_body FIXTURE parse_1_empty_body.phil STATUS 65 KIND located

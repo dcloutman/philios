@@ -1,0 +1,4 @@
+function f(x: ?/*c*/Integer): null:
+    pass
+function main():
+    return 0

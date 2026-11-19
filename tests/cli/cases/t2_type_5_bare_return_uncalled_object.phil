@@ -1,0 +1,4 @@
+function f(): Object:
+    return
+function main():
+    return 0

@@ -131,16 +131,72 @@ const std::vector<std::unique_ptr<ASTNode>>& CallExpr::arguments() const noexcep
     return arguments_;
 }
 
-ExprStmt::ExprStmt(std::unique_ptr<CallExpr> call)
-    : ASTNode(call ? call->location() : SourceLocation{}), call_(std::move(call)) {
-    if (!call_) {
-        throw InternalError("ExprStmt: null call");
+EchoCall::EchoCall(SourceLocation location, std::unique_ptr<ASTNode> argument)
+    : ASTNode(location), argument_(std::move(argument)) {
+    if (!argument_) {
+        throw InternalError("EchoCall: null argument");
+    }
+}
+
+EchoCall::~EchoCall() {
+    std::unique_ptr<ASTNode> worklist;
+    pushOntoWorklist(worklist, std::move(argument_));
+    destroyWorklist(worklist);
+}
+
+NodeKind EchoCall::kind() const noexcept {
+    return NodeKind::EchoCall;
+}
+
+void EchoCall::detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept {
+    pushOntoWorklist(worklistHead, std::move(argument_));
+}
+
+const ASTNode& EchoCall::argument() const noexcept {
+    return *argument_;
+}
+
+TypeofCall::TypeofCall(SourceLocation location, std::unique_ptr<ASTNode> argument)
+    : ASTNode(location), argument_(std::move(argument)) {
+    if (!argument_) {
+        throw InternalError("TypeofCall: null argument");
+    }
+}
+
+TypeofCall::~TypeofCall() {
+    std::unique_ptr<ASTNode> worklist;
+    pushOntoWorklist(worklist, std::move(argument_));
+    destroyWorklist(worklist);
+}
+
+NodeKind TypeofCall::kind() const noexcept {
+    return NodeKind::TypeofCall;
+}
+
+void TypeofCall::detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept {
+    pushOntoWorklist(worklistHead, std::move(argument_));
+}
+
+const ASTNode& TypeofCall::argument() const noexcept {
+    return *argument_;
+}
+
+ExprStmt::ExprStmt(std::unique_ptr<ASTNode> expression)
+    : ASTNode(expression ? expression->location() : SourceLocation{}),
+      expression_(std::move(expression)) {
+    if (!expression_) {
+        throw InternalError("ExprStmt: null expression");
+    }
+    const NodeKind expressionKind = expression_->kind();
+    if (expressionKind != NodeKind::CallExpr && expressionKind != NodeKind::EchoCall &&
+        expressionKind != NodeKind::TypeofCall) {
+        throw InternalError("ExprStmt: expression must be a call or pseudo-call");
     }
 }
 
 ExprStmt::~ExprStmt() {
     std::unique_ptr<ASTNode> worklist;
-    pushOntoWorklist(worklist, std::move(call_));
+    pushOntoWorklist(worklist, std::move(expression_));
     destroyWorklist(worklist);
 }
 
@@ -149,11 +205,11 @@ NodeKind ExprStmt::kind() const noexcept {
 }
 
 void ExprStmt::detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept {
-    pushOntoWorklist(worklistHead, std::move(call_));
+    pushOntoWorklist(worklistHead, std::move(expression_));
 }
 
-const CallExpr& ExprStmt::call() const noexcept {
-    return *call_;
+const ASTNode& ExprStmt::expression() const noexcept {
+    return *expression_;
 }
 
 ReturnStmt::ReturnStmt(SourceLocation location, std::unique_ptr<ASTNode> value) noexcept
@@ -218,7 +274,7 @@ const std::vector<std::unique_ptr<ASTNode>>& Block::statements() const noexcept 
     return statements_;
 }
 
-Param::Param(SourceLocation location, std::string_view name, TypeName type) noexcept
+Param::Param(SourceLocation location, std::string_view name, DeclaredType type) noexcept
     : ASTNode(location), name_(name), type_(type) {}
 
 NodeKind Param::kind() const noexcept {
@@ -231,13 +287,13 @@ std::string_view Param::name() const noexcept {
     return name_;
 }
 
-TypeName Param::type() const noexcept {
+DeclaredType Param::type() const noexcept {
     return type_;
 }
 
 FunctionDecl::FunctionDecl(SourceLocation location, std::string_view name,
                            std::vector<std::unique_ptr<Param>> params,
-                           std::optional<TypeName> returnType, std::unique_ptr<Block> body)
+                           std::optional<DeclaredType> returnType, std::unique_ptr<Block> body)
     : ASTNode(location), name_(name), params_(std::move(params)), returnType_(returnType),
       body_(std::move(body)) {
     if (!body_) {
@@ -280,7 +336,7 @@ const std::vector<std::unique_ptr<Param>>& FunctionDecl::params() const noexcept
     return params_;
 }
 
-std::optional<TypeName> FunctionDecl::returnType() const noexcept {
+std::optional<DeclaredType> FunctionDecl::returnType() const noexcept {
     return returnType_;
 }
 

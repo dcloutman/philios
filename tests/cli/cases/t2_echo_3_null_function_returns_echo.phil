@@ -1,0 +1,4 @@
+function f(): null:
+    return echo("x")
+function main():
+    f()

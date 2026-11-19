@@ -1,0 +1,10 @@
+function take(x: ?Object): Integer:
+    return 1
+function id(x: Integer): Integer:
+    return x
+function main():
+    take(null)
+    take(1)
+    take("s")
+    take(id)
+    return 0

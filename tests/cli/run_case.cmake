@@ -1,8 +1,11 @@
-# CLI golden-test driver (plan 0001 §7, §9). Runs the real `philios` binary in a fresh working
-# directory with execute_process(WORKING_DIRECTORY ... TIMEOUT 10) and checks the exit status, the
-# stderr text (a class/line/column prefix, the usage text, a startup prefix, or empty on success),
-# and that stdout is empty. Large and structural inputs are generated here, at test time, into the
-# build directory; they are never committed.
+# CLI golden-test driver (plan 0001 §7, §9; plan 0002 §7 task 1). Runs the real `philios` binary
+# in a fresh working directory with execute_process(WORKING_DIRECTORY ... TIMEOUT <limit>) and
+# checks the exit status, the stderr text (a class/line/column prefix, the usage text, a startup
+# prefix, or empty on success), and stdout: by default stdout must be empty; with
+# EXPECT_STDOUT_HEX it must equal those exact bytes. Large and structural inputs are generated
+# here, at test time, into the build directory; they are never committed. The run-time limit
+# (TIMEOUT) is 10 seconds for every MODE except `long_line`, which gets 20 seconds (plan 0002
+# architecture decisions §6 item 8: its 2 MiB input takes 8 to 9.3 seconds under ASan).
 #
 # Invoked as `cmake -D<var>=<value> ... -P run_case.cmake`. Variables:
 #   PHILIOS_BIN      Absolute path of the philios executable (required).
@@ -25,7 +28,26 @@
 #                      long_identifier a call of one identifier; the file is SIZE bytes
 #                      call_chain      main -> f2 -> ... -> fDEPTH (call depth DEPTH)
 #                      eval_depth      the T-SEC-4 worst case (calls nested to the parser limit)
+#                      pseudo_nesting  `main`'s body is `echo(` followed by NESTING - 2 nested
+#                                      `typeof(`, the string "x", and the closing parentheses, so
+#                                      the innermost argument list is at nesting level NESTING
+#                                      (plan 0002 T2-TYPEOF-6)
+#                      broken_pipe_program
+#                                      the plan 0002 T2-ECHO-6 program: `spam(s)` echoes its
+#                                      argument and recurses; `main` calls it with a string of
+#                                      65,536 `x` characters
+#                      copy_folder     copy every regular file directly inside FIXTURE_DIR (for
+#                                      example main.phil and philios.json) into WORK_DIR under the
+#                                      same names; subdirectories are not copied (plan 0002 task 6,
+#                                      T2-DOC-1; architecture decisions §6 item 7)
 #   FIXTURE          Source fixture for the file-based modes.
+#   FIXTURE_DIR      Absolute path of the source directory for MODE copy_folder. It is only read,
+#                    never modified, and must be an existing directory. The driver fails before
+#                    deleting anything if FIXTURE_DIR is missing, is not a directory, or is the same
+#                    as, inside, or contains WORK_DIR. The check compares canonical paths
+#                    (file(REAL_PATH)), so a symlink in either path, including in an existing
+#                    parent of a WORK_DIR that does not exist yet, cannot hide an overlap. A WORK_DIR
+#                    whose missing part contains `.`, `..`, or a dangling symlink is rejected.
 #   ARGS             Command-line arguments (a CMake list); default none.
 #   EXPECT_STATUS    Required exit status, unless EXPECT_NO_CRASH is set.
 #   EXPECT_KIND      What stderr must hold:
@@ -39,6 +61,22 @@
 #   FORBID_MESSAGE   Optional text the diagnostic must not contain.
 #   EXPECT_NO_CRASH  If true, only require a normal interpreter status (0, 65, 66, or 70), no
 #                    sanitizer report, and empty stdout (T-PARSE-5).
+#   EXPECT_STDOUT_HEX
+#                    The exact expected stdout bytes as lowercase hexadecimal (plan 0002 §8: "stdout
+#                    `text`"). stdout is captured to a file with OUTPUT_FILE, read back with
+#                    file(READ ... HEX), and compared exactly. When unset, stdout must be empty.
+#                    Valid only with STDOUT_MODE capture.
+#   STDOUT_MODE      Where the binary's stdout goes (plan 0002 §7 task 1); default `capture`:
+#                      capture      stdout is captured and checked (EXPECT_STDOUT_HEX, or empty)
+#                      dev_full     stdout is /dev/full; when /dev/full does not exist the driver
+#                                   writes `<SKIP_LABEL> SKIPPED: /dev/full not available` and the
+#                                   case is reported as skipped through SKIP_REGULAR_EXPRESSION
+#                      closed       the binary runs with descriptor 1 closed, through
+#                                   `sh -c 'exec "$0" >&-' <binary>`
+#                      broken_pipe  the binary's stdout is a pipe to `${CMAKE_COMMAND} -E true`,
+#                                   built with two COMMANDs in one execute_process; the binary's
+#                                   own status is taken from RESULTS_VARIABLE
+#                    In dev_full, closed, and broken_pipe, stdout is not checked.
 #   SKIP_LABEL       Test label used in the skip line `<SKIP_LABEL> SKIPPED: <reason>`.
 
 cmake_minimum_required(VERSION 3.28)
@@ -48,6 +86,62 @@ foreach(required PHILIOS_BIN WORK_DIR MODE)
     message(FATAL_ERROR "run_case.cmake: ${required} is required")
   endif()
 endforeach()
+
+if(NOT DEFINED STDOUT_MODE OR STDOUT_MODE STREQUAL "")
+  set(STDOUT_MODE capture)
+endif()
+if(NOT STDOUT_MODE MATCHES "^(capture|dev_full|closed|broken_pipe)$")
+  message(FATAL_ERROR "run_case.cmake: unknown STDOUT_MODE '${STDOUT_MODE}'")
+endif()
+if(DEFINED EXPECT_STDOUT_HEX AND NOT STDOUT_MODE STREQUAL "capture")
+  message(FATAL_ERROR "run_case.cmake: EXPECT_STDOUT_HEX needs STDOUT_MODE capture")
+endif()
+
+if(STDOUT_MODE STREQUAL "dev_full" AND NOT EXISTS "/dev/full")
+  message("${SKIP_LABEL} SKIPPED: /dev/full not available")
+  return()
+endif()
+
+# MODE copy_folder only reads FIXTURE_DIR. Check it before WORK_DIR is deleted, so that a wrong
+# path can never remove or write into the source directory.
+if(MODE STREQUAL "copy_folder")
+  if(NOT DEFINED FIXTURE_DIR OR NOT IS_DIRECTORY "${FIXTURE_DIR}")
+    message(FATAL_ERROR
+            "run_case.cmake: MODE copy_folder needs an existing directory FIXTURE_DIR (got '${FIXTURE_DIR}')")
+  endif()
+  file(REAL_PATH "${FIXTURE_DIR}" source_dir_real)
+  # Compare canonical paths. WORK_DIR may not exist yet, so resolve its deepest existing ancestor
+  # with file(REAL_PATH) (this follows a symlink anywhere in the existing part) and append the
+  # missing components unchanged. A missing component that is `.`, `..`, or a dangling symlink
+  # could still lead elsewhere when the directory is created, so it is rejected.
+  cmake_path(ABSOLUTE_PATH WORK_DIR OUTPUT_VARIABLE work_dir_existing)
+  set(work_dir_missing "")
+  while(NOT EXISTS "${work_dir_existing}")
+    if(IS_SYMLINK "${work_dir_existing}")
+      message(FATAL_ERROR
+              "run_case.cmake: WORK_DIR '${WORK_DIR}' must not go through a dangling symlink ('${work_dir_existing}')")
+    endif()
+    cmake_path(GET work_dir_existing FILENAME work_dir_name)
+    if(work_dir_name STREQUAL "." OR work_dir_name STREQUAL "..")
+      message(FATAL_ERROR
+              "run_case.cmake: the missing part of WORK_DIR '${WORK_DIR}' must not contain '.' or '..'")
+    endif()
+    if(NOT work_dir_name STREQUAL "")
+      set(work_dir_missing "${work_dir_name}/${work_dir_missing}")
+    endif()
+    cmake_path(GET work_dir_existing PARENT_PATH work_dir_existing)
+  endwhile()
+  file(REAL_PATH "${work_dir_existing}" work_dir_real)
+  if(NOT work_dir_missing STREQUAL "")
+    cmake_path(APPEND work_dir_real "${work_dir_missing}")
+  endif()
+  cmake_path(IS_PREFIX source_dir_real "${work_dir_real}" NORMALIZE work_in_source)
+  cmake_path(IS_PREFIX work_dir_real "${source_dir_real}" NORMALIZE source_in_work)
+  if(work_in_source OR source_in_work)
+    message(FATAL_ERROR
+            "run_case.cmake: WORK_DIR '${WORK_DIR}' must not be, contain, or lie inside FIXTURE_DIR '${FIXTURE_DIR}'")
+  endif()
+endif()
 
 set(main_file "${WORK_DIR}/main.phil")
 file(REMOVE_RECURSE "${WORK_DIR}")
@@ -182,17 +276,84 @@ elseif(MODE STREQUAL "eval_depth")
        "function main():\n    return f(1)\n"
        "function f(x: Integer): Integer:\n    return ${opens}f(x)${closes}\n"
        "function g(x: Integer): Integer:\n    return x\n")
+elseif(MODE STREQUAL "pseudo_nesting")
+  # `main`'s body is level 1 and `echo(`'s argument list is level 2, so NESTING - 2 nested
+  # `typeof(` put the innermost argument list at level NESTING. `closes` balances the `typeof(`s;
+  # the template's literal `)` after it closes `echo(`.
+  math(EXPR typeof_count "${NESTING} - 2")
+  string(REPEAT "typeof(" ${typeof_count} opens)
+  string(REPEAT ")" ${typeof_count} closes)
+  file(WRITE "${main_file}" "function main():\n    echo(${opens}\"x\"${closes})\n")
+elseif(MODE STREQUAL "broken_pipe_program")
+  string(REPEAT "x" 65536 xs)
+  file(WRITE "${main_file}"
+       "function spam(s: String): null:\n"
+       "    echo(s)\n"
+       "    spam(s)\n"
+       "function main():\n"
+       "    spam(\"${xs}\")\n")
+elseif(MODE STREQUAL "copy_folder")
+  # FIXTURE_DIR was checked above. Copy each regular file byte for byte; nothing is written to the
+  # source directory.
+  file(GLOB fixture_entries LIST_DIRECTORIES false "${FIXTURE_DIR}/*")
+  if(fixture_entries STREQUAL "")
+    message(FATAL_ERROR "run_case.cmake: FIXTURE_DIR '${FIXTURE_DIR}' holds no files")
+  endif()
+  foreach(fixture_entry IN LISTS fixture_entries)
+    cmake_path(GET fixture_entry FILENAME fixture_name)
+    file(COPY_FILE "${fixture_entry}" "${WORK_DIR}/${fixture_name}")
+  endforeach()
 else()
   message(FATAL_ERROR "run_case.cmake: unknown MODE '${MODE}'")
 endif()
 
-execute_process(
-  COMMAND "${PHILIOS_BIN}" ${ARGS}
-  WORKING_DIRECTORY "${WORK_DIR}"
-  TIMEOUT 10
-  RESULT_VARIABLE status
-  OUTPUT_VARIABLE stdout_text
-  ERROR_VARIABLE stderr_text)
+set(run_timeout 10)
+if(MODE STREQUAL "long_line")
+  set(run_timeout 20)
+endif()
+
+set(stdout_file "${WORK_DIR}/stdout.bin")
+if(STDOUT_MODE STREQUAL "capture")
+  execute_process(
+    COMMAND "${PHILIOS_BIN}" ${ARGS}
+    WORKING_DIRECTORY "${WORK_DIR}"
+    TIMEOUT ${run_timeout}
+    RESULT_VARIABLE status
+    OUTPUT_FILE "${stdout_file}"
+    ERROR_VARIABLE stderr_text)
+elseif(STDOUT_MODE STREQUAL "dev_full")
+  execute_process(
+    COMMAND "${PHILIOS_BIN}" ${ARGS}
+    WORKING_DIRECTORY "${WORK_DIR}"
+    TIMEOUT ${run_timeout}
+    RESULT_VARIABLE status
+    OUTPUT_FILE "/dev/full"
+    ERROR_VARIABLE stderr_text)
+elseif(STDOUT_MODE STREQUAL "closed")
+  execute_process(
+    COMMAND sh -c "exec \"$0\" \"$@\" >&-" "${PHILIOS_BIN}" ${ARGS}
+    WORKING_DIRECTORY "${WORK_DIR}"
+    TIMEOUT ${run_timeout}
+    RESULT_VARIABLE status
+    ERROR_VARIABLE stderr_text)
+elseif(STDOUT_MODE STREQUAL "broken_pipe")
+  execute_process(
+    COMMAND "${PHILIOS_BIN}" ${ARGS}
+    COMMAND "${CMAKE_COMMAND}" -E true
+    WORKING_DIRECTORY "${WORK_DIR}"
+    TIMEOUT ${run_timeout}
+    RESULTS_VARIABLE pipeline_statuses
+    RESULT_VARIABLE pipeline_status
+    ERROR_VARIABLE stderr_text)
+  list(LENGTH pipeline_statuses pipeline_status_count)
+  if(pipeline_status_count LESS 1)
+    set(status "${pipeline_status}")
+  else()
+    list(GET pipeline_statuses 0 status)
+  endif()
+else()
+  message(FATAL_ERROR "run_case.cmake: unknown STDOUT_MODE '${STDOUT_MODE}'")
+endif()
 
 if(MODE STREQUAL "unreadable")
   execute_process(COMMAND chmod 600 "${main_file}")
@@ -200,8 +361,20 @@ endif()
 
 set(failures "")
 
-if(NOT stdout_text STREQUAL "")
-  string(APPEND failures "stdout is not empty\n")
+if(STDOUT_MODE STREQUAL "capture")
+  if(EXISTS "${stdout_file}")
+    file(READ "${stdout_file}" stdout_hex HEX)
+  else()
+    set(stdout_hex "")
+  endif()
+
+  if(DEFINED EXPECT_STDOUT_HEX)
+    if(NOT stdout_hex STREQUAL "${EXPECT_STDOUT_HEX}")
+      string(APPEND failures "expected stdout hex ${EXPECT_STDOUT_HEX}, got ${stdout_hex}\n")
+    endif()
+  elseif(NOT stdout_hex STREQUAL "")
+    string(APPEND failures "stdout is not empty\n")
+  endif()
 endif()
 
 if(EXPECT_NO_CRASH)

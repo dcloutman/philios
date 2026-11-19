@@ -1,7 +1,8 @@
 #pragma once
 
 /// @file
-/// @brief Token kinds and the token record produced by the lexer (plan 0001 §3.3, D27).
+/// @brief Token kinds and the token record produced by the lexer (plan 0001 §3.3, D27; plan 0002
+///        §3.2).
 
 #include "common/errors.hpp"
 
@@ -11,16 +12,21 @@
 
 namespace philios {
 
-/// @brief Every token kind. Each of the 23 reserved words has its own keyword kind (D27); the
-///        lexer never emits a reserved word as TokenKind::Identifier.
+/// @brief Every token kind. Each of the 28 reserved words (plan 0002 §3.2) has its own keyword
+///        kind (plan 0001 D27); the lexer never emits a reserved word as TokenKind::Identifier.
 enum class TokenKind {
     Identifier,     ///< `[A-Za-z_][A-Za-z0-9_]*` that is not a reserved word.
-    IntegerLiteral, ///< Decimal literal; value in Token::integerValue.
+    IntegerLiteral, ///< Decimal literal, positive or negative (plan 0002 §3.2); value in
+                    ///< Token::integerValue. A negative literal's text and location include
+                    ///< its `-`.
     StringLiteral,  ///< Double-quoted literal; escape-processed bytes in Token::stringValue.
     LeftParen,      ///< `(`
     RightParen,     ///< `)`
     Colon,          ///< `:`
     Comma,          ///< `,`
+    Minus,          ///< `-` that does not begin a negative integer literal (plan 0002 §3.2). Each
+                    ///< `-` is its own token; no grammar rule accepts it in plan 0002.
+    Question,       ///< `?`; used only as the nullable prefix of a type name (plan 0002 §3.3).
     Newline,        ///< End of a logical line.
     Indent,         ///< Indentation increased by one level (4 spaces).
     Dedent,         ///< Indentation decreased by one level.
@@ -52,6 +58,14 @@ enum class TokenKind {
     KeywordWith,         ///< `with`
     KeywordExport,       ///< `export`
     KeywordImport,       ///< `import`
+
+    // Reserved by plan 0002 (§3.2, D2, D20). `echo` and `typeof` begin pseudo-calls (plan 0002
+    // §3.3); `not`, `goto`, and `isa` have no meaning.
+    KeywordNot,    ///< `not`
+    KeywordGoto,   ///< `goto`
+    KeywordIsa,    ///< `isa`
+    KeywordEcho,   ///< `echo`
+    KeywordTypeof, ///< `typeof`
 };
 
 /// @brief One token.

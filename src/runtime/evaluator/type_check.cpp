@@ -3,21 +3,50 @@
 #include "frontend/ast/ast.hpp"
 #include "runtime/object_model/object.hpp"
 
+#include <string_view>
+
 namespace philios {
 
-bool matchesDeclaredType(const Object& value, TypeName declared) noexcept {
+bool matchesDeclaredType(const Object& value, DeclaredType declared) noexcept {
     const ObjectType runtimeType = value.objectType();
-    switch (declared) {
+
+    bool accepted = false;
+    switch (declared.base) {
     case TypeName::Integer:
-        return runtimeType == ObjectType::Integer;
+        accepted = (runtimeType == ObjectType::Integer);
+        break;
     case TypeName::String:
-        return runtimeType == ObjectType::String;
+        accepted = (runtimeType == ObjectType::String);
+        break;
     case TypeName::Function:
-        return runtimeType == ObjectType::Function;
+        accepted = (runtimeType == ObjectType::Function);
+        break;
+    case TypeName::Object:
+        accepted = (runtimeType != ObjectType::Null);
+        break;
     case TypeName::Null:
-        return runtimeType == ObjectType::Null;
+        accepted = (runtimeType == ObjectType::Null);
+        break;
     }
-    return false;
+
+    if (accepted) {
+        return true;
+    }
+    return declared.nullable && runtimeType == ObjectType::Null;
+}
+
+std::string_view scriptTypeName(const Object& value) noexcept {
+    switch (value.objectType()) {
+    case ObjectType::Integer:
+        return "Integer";
+    case ObjectType::String:
+        return "String";
+    case ObjectType::Function:
+        return "Function";
+    case ObjectType::Null:
+        return "null";
+    }
+    return {};
 }
 
 } // namespace philios

@@ -12,6 +12,10 @@ ObjectType String::objectType() const noexcept {
     return ObjectType::String;
 }
 
+std::string_view String::bytes() const noexcept {
+    return bytes_;
+}
+
 bool String::contentEquals(std::string_view bytes) const noexcept {
     return bytes_ == bytes;
 }

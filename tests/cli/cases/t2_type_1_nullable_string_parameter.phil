@@ -1,0 +1,6 @@
+function take(x: ?String): Integer:
+    return 1
+function main():
+    take(null)
+    take("s")
+    return 0

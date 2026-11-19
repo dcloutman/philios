@@ -1,0 +1,4 @@
+function p(x: Object): null:
+    echo(x)
+function main():
+    p("ok")

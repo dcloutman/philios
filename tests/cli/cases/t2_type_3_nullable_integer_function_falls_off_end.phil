@@ -1,0 +1,6 @@
+function f(): ?Integer:
+    pass
+function take(x: ?Integer): Integer:
+    return 0
+function main():
+    return take(f())

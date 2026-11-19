@@ -2,6 +2,9 @@
 //
 // Per §8, the error cases of T-DECL-3, -4, -6, -7 (and T-DECL-1, -2, -5) are CLI golden tests;
 // this file checks that the accepted cases validate.
+//
+// Plan 0002 (§3.4, D23, D29; task 3): the accepted cases of T2-TYPE-5 and T2-TYPE-9 and the new
+// declarable types in non-`main` functions. Their error cases are CLI golden tests.
 
 #include "analysis/semantic_analyzer/validator.hpp"
 #include "frontend/ast/ast.hpp"
@@ -42,6 +45,27 @@ TEST_CASE("T-DECL-7 parameters and forward references to functions are accepted"
                                    "function apply(f: Function, x: Integer): Integer:\n"
                                    "    return f(x)\n"
                                    "function id(x: Integer): Integer:\n    return x\n"));
+}
+
+TEST_CASE("T2-TYPE-5 a never-called ?Integer function whose body is a bare return is accepted") {
+    CHECK_NOTHROW(parseAndValidate("function f(): ?Integer:\n    return\n"
+                                   "function main():\n    return 0\n"));
+}
+
+TEST_CASE("T2-TYPE-9 a bare return is accepted in every ?T function (D29)") {
+    CHECK_NOTHROW(parseAndValidate("function a(): ?Integer:\n    return\n"
+                                   "function b(): ?String:\n    pass\n    return\n"
+                                   "function c(): ?Function:\n    return\n"
+                                   "function d(): ?Object:\n    return\n"
+                                   "function main():\n    b()\n"));
+}
+
+TEST_CASE("T2-TYPE-8 the new declarable types are accepted on non-main functions") {
+    CHECK_NOTHROW(parseAndValidate(
+        "function f(a: Object, b: ?Integer, c: ?String, d: ?Function, e: ?Object): Object:\n"
+        "    return a\n"
+        "function g(x: ?Object): ?Object:\n    return x\n"
+        "function main():\n    return 0\n"));
 }
 
 } // namespace philios::test

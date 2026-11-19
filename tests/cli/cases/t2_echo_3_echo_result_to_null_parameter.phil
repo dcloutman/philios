@@ -1,0 +1,4 @@
+function take(x: null): null:
+    pass
+function main():
+    take(echo("x"))

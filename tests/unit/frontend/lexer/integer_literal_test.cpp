@@ -1,4 +1,5 @@
-// Unit tests for src/frontend/lexer/integer_literal.hpp (plan 0001 §3.3; T-LEX-8 unit, task 5).
+// Unit tests for src/frontend/lexer/integer_literal.hpp (plan 0001 §3.3; T-LEX-8 unit, task 5;
+// plan 0002 §3.2; T2-LEX-4, task 2).
 
 #include "frontend/lexer/integer_literal.hpp"
 
@@ -21,6 +22,25 @@ TEST_CASE("T-LEX-8 parseDecimalInteger accepts the int64 range and rejects overf
 
     CHECK_FALSE(parseDecimalInteger("9223372036854775808").has_value());
     CHECK_FALSE(parseDecimalInteger(std::string(1000, '9')).has_value());
+}
+
+TEST_CASE("T2-LEX-4 parseNegativeDecimalInteger accepts magnitudes up to 2^63") {
+    const std::int64_t minimum = requireValue(parseNegativeDecimalInteger("9223372036854775808"));
+    CHECK(minimum == INT64_MIN);
+
+    const std::int64_t aboveMinimum =
+        requireValue(parseNegativeDecimalInteger("9223372036854775807"));
+    CHECK(aboveMinimum == -INT64_MAX);
+
+    const std::int64_t minusOne = requireValue(parseNegativeDecimalInteger("1"));
+    CHECK(minusOne == -1);
+}
+
+TEST_CASE("T2-LEX-4 parseNegativeDecimalInteger rejects magnitudes above 2^63") {
+    CHECK_FALSE(parseNegativeDecimalInteger("9223372036854775809").has_value());
+    CHECK_FALSE(parseNegativeDecimalInteger("18446744073709551615").has_value());
+    CHECK_FALSE(parseNegativeDecimalInteger("18446744073709551616").has_value());
+    CHECK_FALSE(parseNegativeDecimalInteger(std::string(1000, '9')).has_value());
 }
 
 } // namespace philios::test

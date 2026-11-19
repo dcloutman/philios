@@ -1,0 +1,4 @@
+function f(): Function:
+    return typeof
+function main():
+    pass

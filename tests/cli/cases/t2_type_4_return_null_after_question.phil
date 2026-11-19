@@ -1,0 +1,4 @@
+function f(): ?null:
+    pass
+function main():
+    return 0

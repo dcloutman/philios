@@ -1,8 +1,10 @@
-// Unit tests for src/frontend/lexer/lexer.hpp (plan 0001 §3.3, D8, D23, D27, D28, D40; task 5).
+// Unit tests for src/frontend/lexer/lexer.hpp (plan 0001 §3.3, D8, D23, D27, D28, D40; task 5;
+// plan 0002 §3.2, D2, D4-D7, D20-D22; task 2).
 //
 // Per §8, error cases of T-LEX-1 and T-LEX-3..8 are CLI golden tests; this file checks their
 // accepted cases on the token stream. T-LEX-2, T-LEX-9, and T-LEX-12 run whole here (T-LEX-9's
-// line-break and end-of-file location cases are also CLI tests), plus T-LEX-11 part (a).
+// line-break and end-of-file location cases are also CLI tests), plus T-LEX-11 part (a). Plan 0002
+// T2-LEX-5 and T2-LEX-6 run here; T2-LEX-1 to T2-LEX-3 and T2-LEX-7 are CLI golden tests.
 
 #include "frontend/lexer/lexer.hpp"
 #include "common/errors.hpp"
@@ -98,6 +100,17 @@ const Kinds kMinimalProgramKinds = {
     TokenKind::Dedent,          TokenKind::EndOfInput,
 };
 
+/// Lexes the one-line @p source (which must end in its LF and have static storage, since tokens
+/// view it) and returns its tokens without the final NEWLINE and EndOfInput (plan 0002 T2-LEX-5).
+[[nodiscard]] std::vector<Token> lineTokens(std::string_view source) {
+    std::vector<Token> tokens = lexSource(source);
+    REQUIRE(tokens.size() >= 2);
+    CHECK(tokens[tokens.size() - 1].kind == TokenKind::EndOfInput);
+    CHECK(tokens[tokens.size() - 2].kind == TokenKind::Newline);
+    tokens.resize(tokens.size() - 2);
+    return tokens;
+}
+
 } // namespace
 
 TEST_CASE("Token stream of a minimal program") {
@@ -123,8 +136,9 @@ TEST_CASE("T-LEX-1 valid multi-byte UTF-8 in a string and a comment is accepted"
 }
 
 TEST_CASE("T-LEX-2 columns count bytes, not characters") {
-    // Line 2: `"` at 12, two bytes of U+00E9 at 13-14, `"` at 15, `-` at 17.
-    CHECK(lexicalErrorAt("function main():\n    return \"\xC3\xA9\" -\n") == SourceLocation{2, 17});
+    // Line 2: `"` at 12, two bytes of U+00E9 at 13-14, `"` at 15, `@` at 17. Plan 0002 T-UPD-1:
+    // `@` replaces `-`, which is now a token.
+    CHECK(lexicalErrorAt("function main():\n    return \"\xC3\xA9\" @\n") == SourceLocation{2, 17});
 }
 
 TEST_CASE("T-LEX-3 accepted characters") {
@@ -398,6 +412,187 @@ TEST_CASE("T-LEX-12 end-of-input lookahead on exact-size storage") {
     SECTION("a final UTF-8 lead byte without continuation bytes, in a comment") {
         withExactStorage("function main():\n    pass\n// \xE2", [](std::string_view source) {
             CHECK(lexicalErrorAt(source) == SourceLocation{3, 4});
+        });
+    }
+}
+
+TEST_CASE("T2-LEX-5 negative literals in expression-start context") {
+    SECTION("return -1 is return and the literal -1 at the -") {
+        const std::vector<Token> tokens = lineTokens("return -1\n");
+        CHECK(kindsOf(tokens) == Kinds{TokenKind::KeywordReturn, TokenKind::IntegerLiteral});
+        REQUIRE(tokens.size() == 2);
+        CHECK(tokens[1].integerValue == -1);
+        CHECK(tokens[1].text == "-1");
+        CHECK(tokens[1].location == SourceLocation{1, 8});
+    }
+    SECTION("f(-1, -2) gives two negative literals") {
+        const std::vector<Token> tokens = lineTokens("f(-1, -2)\n");
+        const Kinds expected = {
+            TokenKind::Identifier, TokenKind::LeftParen,      TokenKind::IntegerLiteral,
+            TokenKind::Comma,      TokenKind::IntegerLiteral, TokenKind::RightParen,
+        };
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[2].integerValue == -1);
+        CHECK(tokens[2].text == "-1");
+        CHECK(tokens[2].location == SourceLocation{1, 3});
+        CHECK(tokens[4].integerValue == -2);
+        CHECK(tokens[4].text == "-2");
+        CHECK(tokens[4].location == SourceLocation{1, 7});
+    }
+    SECTION("-9223372036854775808 is INT64_MIN") {
+        const std::vector<Token> tokens = lineTokens("return -9223372036854775808\n");
+        REQUIRE(tokens.size() == 2);
+        CHECK(tokens[1].kind == TokenKind::IntegerLiteral);
+        CHECK(tokens[1].integerValue == std::numeric_limits<std::int64_t>::min());
+        CHECK(tokens[1].text == "-9223372036854775808");
+    }
+    SECTION("a comment between return and the literal keeps expression-start context") {
+        const std::vector<Token> tokens = lineTokens("return /*c*/ -1\n");
+        CHECK(kindsOf(tokens) == Kinds{TokenKind::KeywordReturn, TokenKind::IntegerLiteral});
+        REQUIRE(tokens.size() == 2);
+        CHECK(tokens[1].integerValue == -1);
+        CHECK(tokens[1].location == SourceLocation{1, 14});
+    }
+    SECTION("a ; continuation after return keeps expression-start context") {
+        const std::vector<Token> tokens = lexSource("function main():\n    return;\n        -1\n");
+        const std::size_t keyword = requireValue(indexOf(tokens, TokenKind::KeywordReturn));
+        REQUIRE(keyword + 2 < tokens.size());
+        CHECK(tokens[keyword + 1].kind == TokenKind::IntegerLiteral);
+        CHECK(tokens[keyword + 1].integerValue == -1);
+        CHECK(tokens[keyword + 1].location == SourceLocation{3, 9});
+        CHECK(tokens[keyword + 2].kind == TokenKind::Newline);
+    }
+    SECTION("-1/*c*/abc is the literal -1 then an identifier, not a lexical error") {
+        const std::vector<Token> tokens = lineTokens("return -1/*c*/abc\n");
+        const Kinds expected = {TokenKind::KeywordReturn, TokenKind::IntegerLiteral,
+                                TokenKind::Identifier};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[1].integerValue == -1);
+        CHECK(tokens[2].text == "abc");
+        CHECK(tokens[2].location == SourceLocation{1, 15});
+    }
+}
+
+TEST_CASE("T2-LEX-5 every other - is its own Minus token") {
+    SECTION("a-1 is an identifier, Minus, and the literal 1") {
+        const std::vector<Token> tokens = lineTokens("a-1\n");
+        const Kinds expected = {TokenKind::Identifier, TokenKind::Minus,
+                                TokenKind::IntegerLiteral};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[1].text == "-");
+        CHECK(tokens[1].location == SourceLocation{1, 2});
+        CHECK(tokens[2].integerValue == 1);
+        CHECK(tokens[2].location == SourceLocation{1, 3});
+    }
+    SECTION("return --1 is Minus, Minus, 1") {
+        const std::vector<Token> tokens = lineTokens("return --1\n");
+        const Kinds expected = {TokenKind::KeywordReturn, TokenKind::Minus, TokenKind::Minus,
+                                TokenKind::IntegerLiteral};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[1].location == SourceLocation{1, 8});
+        CHECK(tokens[2].location == SourceLocation{1, 9});
+        CHECK(tokens[3].integerValue == 1);
+    }
+    SECTION("return - 1 is Minus, 1") {
+        const std::vector<Token> tokens = lineTokens("return - 1\n");
+        const Kinds expected = {TokenKind::KeywordReturn, TokenKind::Minus,
+                                TokenKind::IntegerLiteral};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[1].location == SourceLocation{1, 8});
+        CHECK(tokens[2].integerValue == 1);
+    }
+    SECTION("a - in expression-start context not followed by a digit") {
+        CHECK(kindsOf(lineTokens("return -abc\n")) ==
+              Kinds{TokenKind::KeywordReturn, TokenKind::Minus, TokenKind::Identifier});
+        CHECK(kindsOf(lineTokens("return -/*c*/1\n")) ==
+              Kinds{TokenKind::KeywordReturn, TokenKind::Minus, TokenKind::IntegerLiteral});
+        CHECK(kindsOf(lineTokens("return -\t1\n")) ==
+              Kinds{TokenKind::KeywordReturn, TokenKind::Minus, TokenKind::IntegerLiteral});
+        CHECK(kindsOf(lineTokens("return -(\n")) ==
+              Kinds{TokenKind::KeywordReturn, TokenKind::Minus, TokenKind::LeftParen});
+        CHECK(kindsOf(lineTokens("return -\n")) ==
+              Kinds{TokenKind::KeywordReturn, TokenKind::Minus});
+    }
+    SECTION("a - outside expression-start context") {
+        CHECK(kindsOf(lineTokens("pass -1\n")) ==
+              Kinds{TokenKind::KeywordPass, TokenKind::Minus, TokenKind::IntegerLiteral});
+        CHECK(kindsOf(lineTokens("-1\n")) ==
+              Kinds{TokenKind::Minus, TokenKind::IntegerLiteral});
+        CHECK(kindsOf(lineTokens("a -1\n")) ==
+              Kinds{TokenKind::Identifier, TokenKind::Minus, TokenKind::IntegerLiteral});
+        CHECK(kindsOf(lineTokens("null -1\n")) ==
+              Kinds{TokenKind::KeywordNull, TokenKind::Minus, TokenKind::IntegerLiteral});
+        const Kinds callMinus = {TokenKind::Identifier, TokenKind::LeftParen,
+                                 TokenKind::IntegerLiteral, TokenKind::RightParen,
+                                 TokenKind::Minus, TokenKind::IntegerLiteral};
+        CHECK(kindsOf(lineTokens("f(1)-1\n")) == callMinus);
+        // f(1)-0 is a Minus then 0, not the leading-zero lexical error.
+        CHECK(kindsOf(lineTokens("f(1)-0\n")) == callMinus);
+    }
+}
+
+TEST_CASE("T2-LEX-5 ? is a Question token") {
+    const std::vector<Token> tokens = lineTokens("?Integer\n");
+    CHECK(kindsOf(tokens) == Kinds{TokenKind::Question, TokenKind::TypeInteger});
+    REQUIRE(tokens.size() == 2);
+    CHECK(tokens[0].text == "?");
+    CHECK(tokens[0].location == SourceLocation{1, 1});
+    CHECK(tokens[1].location == SourceLocation{1, 2});
+}
+
+TEST_CASE("T2-LEX-5 Object and the words reserved by plan 0002 lex as keywords") {
+    const auto reserved = std::to_array<std::pair<std::string_view, TokenKind>>({
+        {"Object", TokenKind::TypeObject},
+        {"not", TokenKind::KeywordNot},
+        {"goto", TokenKind::KeywordGoto},
+        {"isa", TokenKind::KeywordIsa},
+        {"echo", TokenKind::KeywordEcho},
+        {"typeof", TokenKind::KeywordTypeof},
+    });
+    for (const auto& [word, kind] : reserved) {
+        const std::string source = std::string(word) + "\n";
+        const std::vector<Token> tokens = lexSource(source);
+        REQUIRE_FALSE(tokens.empty());
+        CHECK(tokens[0].kind == kind);
+        CHECK(tokens[0].kind != TokenKind::Identifier);
+        CHECK(tokens[0].text == word);
+    }
+}
+
+TEST_CASE("T2-LEX-6 end-of-input lookahead for - and ? on exact-size storage") {
+    SECTION("a final - after return is a Minus token, not a lexical error") {
+        withExactStorage("function main():\n    return -", [](std::string_view source) {
+            const std::vector<Token> tokens = lexSource(source);
+            const std::size_t minus = requireValue(indexOf(tokens, TokenKind::Minus));
+            CHECK(tokens[minus].location == SourceLocation{2, 12});
+            CHECK(tokens.back().kind == TokenKind::EndOfInput);
+        });
+    }
+    SECTION("final bytes return -9 give the literal -9") {
+        withExactStorage("function main():\n    return -9", [](std::string_view source) {
+            const std::vector<Token> tokens = lexSource(source);
+            const std::size_t literal = requireValue(indexOf(tokens, TokenKind::IntegerLiteral));
+            CHECK(tokens[literal].integerValue == -9);
+            CHECK(tokens[literal].location == SourceLocation{2, 12});
+            CHECK(tokens.back().kind == TokenKind::EndOfInput);
+        });
+    }
+    SECTION("a final ? is a Question token") {
+        withExactStorage("function main():\n    return ?", [](std::string_view source) {
+            const std::vector<Token> tokens = lexSource(source);
+            const std::size_t question = requireValue(indexOf(tokens, TokenKind::Question));
+            CHECK(tokens[question].location == SourceLocation{2, 12});
+            CHECK(tokens.back().kind == TokenKind::EndOfInput);
+        });
+    }
+    SECTION("final bytes return -0 are the lexical error at the -") {
+        withExactStorage("function main():\n    return -0", [](std::string_view source) {
+            CHECK(lexicalErrorAt(source) == SourceLocation{2, 12});
         });
     }
 }

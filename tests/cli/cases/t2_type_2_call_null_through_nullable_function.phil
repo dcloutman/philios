@@ -1,0 +1,4 @@
+function call(f: ?Function): Integer:
+    return f()
+function main():
+    return call(null)

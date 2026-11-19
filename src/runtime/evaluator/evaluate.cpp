@@ -1,5 +1,6 @@
 // Every ASTNode::evaluate definition for the concrete nodes declared in
-// src/frontend/ast/ast.hpp (plan 0001 §3.9, D45).
+// src/frontend/ast/ast.hpp (plan 0001 §3.9, D45; plan 0002 §3.5, §3.8 for EchoCall and
+// TypeofCall).
 
 #include "common/errors.hpp"
 #include "frontend/ast/ast.hpp"
@@ -7,6 +8,7 @@
 #include "runtime/evaluator/call.hpp"
 #include "runtime/evaluator/completion.hpp"
 #include "runtime/evaluator/execution_context.hpp"
+#include "runtime/evaluator/type_check.hpp"
 #include "runtime/object_model/integer.hpp"
 #include "runtime/object_model/object.hpp"
 #include "runtime/object_model/string_object.hpp"
@@ -15,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -156,8 +159,59 @@ Completion ExprStmt::evaluate(ExecutionContext& context,
         throwInternal("ExprStmt::evaluate: null environment");
     }
 
-    [[maybe_unused]] const Completion completion = call().evaluate(context, environment);
+    [[maybe_unused]] const Completion completion = expression().evaluate(context, environment);
     return Completion{CompletionKind::Normal, context.nullObject()};
+}
+
+Completion EchoCall::evaluate(ExecutionContext& context,
+                              const std::shared_ptr<Environment>& environment) const {
+    const EvaluationDepthGuard depthGuard(context, location());
+    if (environment == nullptr) {
+        throwInternal("EchoCall::evaluate: null environment");
+    }
+
+    const Completion argumentCompletion = argument().evaluate(context, environment);
+    if (argumentCompletion.kind != CompletionKind::Normal) {
+        throwInternal("EchoCall::evaluate: argument completion must be Normal");
+    }
+    if (argumentCompletion.value == nullptr) {
+        throwInternal("EchoCall::evaluate: null argument value");
+    }
+
+    std::shared_ptr<Object> argumentValue = argumentCompletion.value;
+    if (argumentValue->objectType() != ObjectType::String) {
+        throw RuntimeError(RuntimeErrorKind::ArgumentType, argument().location(),
+                           "argument type does not match parameter type");
+    }
+
+    const auto& stringValue = static_cast<const String&>(*argumentValue);
+    const std::error_code writeResult = context.writeOutput(stringValue.bytes());
+    if (writeResult) {
+        throw RuntimeError(RuntimeErrorKind::OutputWrite, location(),
+                           "could not write to standard output: " + writeResult.message());
+    }
+
+    return Completion{CompletionKind::Normal, context.nullObject()};
+}
+
+Completion TypeofCall::evaluate(ExecutionContext& context,
+                                const std::shared_ptr<Environment>& environment) const {
+    const EvaluationDepthGuard depthGuard(context, location());
+    if (environment == nullptr) {
+        throwInternal("TypeofCall::evaluate: null environment");
+    }
+
+    const Completion argumentCompletion = argument().evaluate(context, environment);
+    if (argumentCompletion.kind != CompletionKind::Normal) {
+        throwInternal("TypeofCall::evaluate: argument completion must be Normal");
+    }
+    if (argumentCompletion.value == nullptr) {
+        throwInternal("TypeofCall::evaluate: null argument value");
+    }
+
+    std::shared_ptr<Object> argumentValue = argumentCompletion.value;
+    return Completion{CompletionKind::Normal,
+                      std::make_shared<String>(std::string(scriptTypeName(*argumentValue)))};
 }
 
 Completion ReturnStmt::evaluate(ExecutionContext& context,
