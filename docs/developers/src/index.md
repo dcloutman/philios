@@ -13,8 +13,8 @@
   - [C++ Guidelines](cpp-guidelines/index.md)
     - C++ Coding Guidelines
     - Testing
-      - Unit Tests
-      - Functional Tests
+      - [Unit Tests](cpp-guidelines/unit-tests.md)
+      - [Functional Tests](cpp-guidelines/functional-tests.md)
   - `make`
     - Usage
     - Coding Guidelines

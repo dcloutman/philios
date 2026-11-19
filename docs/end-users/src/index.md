@@ -1,7 +1,7 @@
 # Philios Language Documentation
 
 ## Table of Contents
-These pages describe the features that currently work in Philios.
+These pages describe features that currently work in Philios.
 
 - Getting Started
   - [Installation](getting-started/installation.md)
@@ -9,6 +9,8 @@ These pages describe the features that currently work in Philios.
 - Language Reference
   - [Source Files](reference/source-files.md)
   - [Functions](reference/functions.md)
+    - [`echo`](reference/functions.md#echostring-str-null)
+    - [`typeof`](reference/functions.md#typeofexpr-string)
   - [Types](reference/types.md)
   - [Errors and Limits](reference/errors-and-limits.md)
 
@@ -23,10 +25,8 @@ The topics below describe features that are not available yet. Their documentati
       - Ubuntu / Debian
       - Red Hat
 - Quick Start
-  - Hello World
   - Basic Program Structure
   - Modules
-  - Functions
   - Built-In Types
     - Scalars
     - Data Structures
@@ -49,7 +49,6 @@ The topics below describe features that are not available yet. Their documentati
   - Functions
     - Built-In
       - `delete`
-      - `echo`
       - `exists`
       - Files
         - `File` class
@@ -61,7 +60,6 @@ The topics below describe features that are not available yet. Their documentati
       - `Array`
       - `Dictionary`
       - `File`
-      - `Function`
       - `Float`
       - `Integer`
       - `String`

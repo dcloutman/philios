@@ -37,7 +37,7 @@ files to keep developer decisions and reviewer findings with that plan.
 
 ### Invocation
 
-In a chat using the **Copilot** harness, run `/planning-loop <exact-plan-stem>` to invoke the planning-loop skill (`.github/skills/planning-loop/SKILL.md`), which forwards the exact filename stem to the `planning-loop` custom agent. For `plans/00010.md`, enter `00010`, not `10`. You can also select the custom agent directly from the VS Code Agent picker. If the custom agent is already selected, the skill uses that agent rather than invoking it recursively. The skill is only an entry point. The custom agent defines and runs the workflow.
+In VSCode, in a chat using the **Copilot** harness, run `/planning-loop <exact-plan-stem>` to invoke the planning-loop skill (`.github/skills/planning-loop/SKILL.md`), which forwards the exact filename stem to the `planning-loop` custom agent. For `plans/00010.md`, enter `00010`, not `10`. You can also select the custom agent directly from the VS Code Agent picker. If the custom agent is already selected, the skill uses that agent rather than invoking it recursively. The skill is only an entry point. The custom agent defines and runs the workflow.
 
 The custom agents and skills target the Copilot harness. Add new slash commands as skills in `.github/skills/`, not as `.prompt.md` files. Prompt files run only in VS Code's deprecated **Local** harness, which does not load these custom agents.
 
