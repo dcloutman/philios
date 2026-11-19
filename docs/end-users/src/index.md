@@ -5,58 +5,46 @@ These pages describe features that currently work in Philios.
 
 - Getting Started
   - [Installation](getting-started/installation.md)
-  - [Your First Program](getting-started/first-program.md)
-- Language Reference
-  - [Source Files](reference/source-files.md)
-  - [Functions](reference/functions.md)
-    - [`echo`](reference/functions.md#echostring-str-null)
-    - [`typeof`](reference/functions.md#typeofexpr-string)
-  - [Types](reference/types.md)
-  - [Errors and Limits](reference/errors-and-limits.md)
-
-## Planned Topics
-The topics below describe features that are not available yet. Their documentation will be added when the features are implemented.
-
-- Installation
-  - Binaries
-    - Windows
-    - OS X
-    - Linux
-      - Ubuntu / Debian
-      - Red Hat
-- Quick Start
-  - Basic Program Structure
-  - Modules
-  - Built-In Types
-    - Scalars
-    - Data Structures
-      - Array
-      - List
-      - Dictionary
-      - Set
-      - Tuple
-  - Classes and Objects
-  - Interfaces
-  - Mutable and Immutable Types
-  - Exceptions and Error Handling
+    - Binaries
+      - Windows
+      - OS X
+      - Linux
+        - Ubuntu / Debian
+        - Red Hat
+  - Quick Start
+    - [Your First Program](getting-started/first-program.md)
+    - Basic Program Structure
+    - Modules
+    - Built-In Types
+      - Scalars
+      - Data Structures
+        - Array
+        - List
+        - Dictionary
+        - Set
+        - Tuple
+    - Classes and Objects
+    - Interfaces
+    - Mutable and Immutable Types
+    - Exceptions and Error Handling
 - Language Reference
   - Keywords
+  - [Source Files](reference/source-files.md)
   - Statements
     - `import`
     - `from`
     - `export`
     - `export default`
-  - Functions
-    - Built-In
+  - [Functions](reference/functions.md)
+    - Built-In (Pseudo-Functions)
+      - [`echo`](reference/functions.md#echostring-str-null)
       - `delete`
       - `exists`
-      - Files
-        - `File` class
-        - `file_pass_through()`
-      - `get_module()`
-      - `get_this_module()`
+      - [`typeof`](reference/functions.md#typeofexpr-string)
   - Classes
     - Built-In
+      - `File` class
+        - `File::pass_through()`
       - `Array`
       - `Dictionary`
       - `File`
@@ -66,7 +54,9 @@ The topics below describe features that are not available yet. Their documentati
       - `List`
       - `Set`
       - `Tuple`
-  - Core Modules
-    - `BinaryTree`
-    - `LinkedList`
-    - `Singleton` Interface
+    - Core Modules
+      - `BinaryTree`
+      - `LinkedList`
+      - `Singleton` Interface
+  - [Types](reference/types.md)
+  - [Errors and Limits](reference/errors-and-limits.md)
