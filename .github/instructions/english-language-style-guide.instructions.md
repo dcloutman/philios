@@ -20,6 +20,6 @@ When writing or editing documents, write for an audience that is semi-technical.
 - Use lists for enumerations and steps.
 - Use code blocks for code snippets.
 - Use links for references and related content.
-- Avoid excessive formatting; keep it simple and readable.
+- Avoid excessive formatting. Keep it simple and readable.
 - Use consistent heading levels and styles throughout the document.
   

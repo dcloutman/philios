@@ -3,7 +3,7 @@ name: plan-reviewer
 description: "Primary review of a plan in `plans/`: structure, specification completeness, consistency, scope, tasks, tests, and handling of earlier review feedback. Writes a go/no-go verdict to the plan's review document; a go releases the plan to the secondary architecture and security reviews. Called by plan-composer after each revision."
 argument-hint: "Exact plan filename stem, e.g. 0001 or 00010, and review round"
 model: gpt-5.3-codex
-tools: [read, search, edit]
+tools: [read, search, edit, apply_patch]
 agents: []
 user-invocable: false
 disable-model-invocation: false

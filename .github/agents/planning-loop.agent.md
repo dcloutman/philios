@@ -2,7 +2,7 @@
 name: planning-loop
 description: "Orchestrate the Philios Planning Loop from developer clarification through final approval. Use when starting or resuming planning for a plan in plans/."
 argument-hint: "Exact plan filename stem, e.g. 0001 or 00010"
-model: Claude Opus 5.5
+model: claude-sonnet-5.5
 tools: [read, search, agent]
 agents: [plan-grill-me, plan-composer, plan-reviewer-architecture, plan-reviewer-security]
 user-invocable: true

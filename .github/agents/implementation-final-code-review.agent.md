@@ -1,5 +1,6 @@
 ---
 name: implementation-final-code-review
+model: gemini-3.8-flash
 description: Examines and reviews the final implementation of the code for correctness, style, and adherence to best practices.
 tools: ['read', 'search', 'edit', 'agent']
 ---
