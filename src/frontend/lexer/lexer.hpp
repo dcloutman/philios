@@ -3,8 +3,8 @@
 /// @file
 /// @brief The lexer: bytes to tokens, including UTF-8 validation, line breaks, comments,
 ///        `;` continuation, and indentation (plan 0001 §3.3, D8, D23, D27, D28, D40), plus the
-///        28 reserved words, the `-` and `?` tokens, and contextual negative integer literals
-///        (plan 0002 §3.2, D2, D4–D7, D20–D22).
+///        35 reserved words, the `-` and `?` tokens, and contextual negative integer literals
+///        (plan 0002 §3.2, D2, D4–D7, D20–D22; plan 0003 §4.2).
 
 #include "common/errors.hpp"
 #include "frontend/lexer/token.hpp"
@@ -43,10 +43,11 @@ public:
     /// @return The tokens in source order. Blank and comment-only lines produce no tokens. At end
     ///         of input a pending NEWLINE and one DEDENT per open level are emitted, followed by
     ///         exactly one TokenKind::EndOfInput token.
-    ///         In expression-start context (the previous emitted token is `(`, `,`, or
-    ///         `return`), a `-` immediately followed by `1`-`9` and the following digit run form
+    ///         In expression-start context (the previous emitted token is `(`, `,`, `return`,
+    ///         `=`, `==`, `!=`, or `!`), a `-` immediately followed by `1`-`9` and the following
+    ///         digit run form
     ///         one TokenKind::IntegerLiteral located at the `-`; every other `-` is a
-    ///         TokenKind::Minus token (plan 0002 §3.2).
+    ///         TokenKind::Minus token (plan 0002 §3.2; plan 0003 §4.2.4).
     /// @throws LexicalError at the location given by §4 for the first lexical error (processing
     ///         stops there). A negative literal with a leading `0`, a magnitude above 2^63, or a
     ///         following identifier character is a LexicalError at its `-` (plan 0002 §4).

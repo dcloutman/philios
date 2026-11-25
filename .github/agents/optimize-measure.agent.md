@@ -2,7 +2,7 @@
 name: optimize-measure
 description: Measures the performance impact of implemented C++ mutations during the optimization loop.
 model: ['Claude Opus 5.5', 'Claude Opus 5']
-tools: ['read', 'search', 'edit', 'create', 'apply_patch', 'execute']
+tools: ['read', 'search', , 'execute']
 user-invocable: false
 disable-model-invocation: false
 argument-hint: "The scope of the measurements to be performed, including the specific mutations and performance metrics to be assessed."

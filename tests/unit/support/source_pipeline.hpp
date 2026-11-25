@@ -18,7 +18,8 @@ namespace philios::test {
 [[nodiscard]] std::vector<Token> lexSource(std::string_view source);
 
 /// @brief Lexes and parses @p source with `ExecutionContext::kMaxParseNesting`.
-/// @param source Must outlive the returned AST (nodes hold views into it).
+/// @param source Must outlive the tokens made from it during this call, but not the returned
+///        AST (nodes own their names, plan 0003 §4.14.2).
 /// @throws LexicalError, SyntaxError, and anything the phases throw.
 [[nodiscard]] Program parseSource(std::string_view source);
 

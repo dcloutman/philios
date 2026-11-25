@@ -27,9 +27,15 @@ std::unique_ptr<Module> Module::load(ExecutionContext& context, std::string sour
     validateProgram(module->program_);
 
     module->environment_ = std::make_shared<Environment>(nullptr);
-    for (const std::shared_ptr<const FunctionDecl>& declaration : module->program_) {
-        if (!declaration) {
+    for (const ModuleItem& item : module->program_) {
+        if (!item) {
             throw InternalError("Module::load: null function declaration");
+        }
+        // Plan 0003 task 2 (DR-1 option a): compile-only iteration through asFunctionDecl. Task 9
+        // adds the ConstDecl and SymbolDecl initializer step (plan 0003 §4.14.2).
+        const std::shared_ptr<const FunctionDecl> declaration = asFunctionDecl(item);
+        if (!declaration) {
+            throw InternalError("Module::load: plan 0003 task 2 placeholder module item kind");
         }
         module->environment_->define(
             declaration->name(),

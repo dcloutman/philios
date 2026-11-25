@@ -38,7 +38,7 @@ void ASTNode::destroyWorklist(std::unique_ptr<ASTNode>& worklistHead) noexcept {
     }
 }
 
-Identifier::Identifier(SourceLocation location, std::string_view name) noexcept
+Identifier::Identifier(SourceLocation location, std::string_view name)
     : ASTNode(location), name_(name) {}
 
 NodeKind Identifier::kind() const noexcept {
@@ -274,7 +274,7 @@ const std::vector<std::unique_ptr<ASTNode>>& Block::statements() const noexcept 
     return statements_;
 }
 
-Param::Param(SourceLocation location, std::string_view name, DeclaredType type) noexcept
+Param::Param(SourceLocation location, std::string_view name, DeclaredType type)
     : ASTNode(location), name_(name), type_(type) {}
 
 NodeKind Param::kind() const noexcept {
@@ -342,6 +342,216 @@ std::optional<DeclaredType> FunctionDecl::returnType() const noexcept {
 
 const Block& FunctionDecl::body() const noexcept {
     return *body_;
+}
+
+BooleanLiteral::BooleanLiteral(SourceLocation location, bool value) noexcept
+    : ASTNode(location), value_(value) {}
+
+NodeKind BooleanLiteral::kind() const noexcept {
+    return NodeKind::BooleanLiteral;
+}
+
+void BooleanLiteral::detachChildren(
+    [[maybe_unused]] std::unique_ptr<ASTNode>& worklistHead) noexcept {}
+
+bool BooleanLiteral::value() const noexcept {
+    return value_;
+}
+
+UnaryExpr::UnaryExpr(SourceLocation location, UnaryOperator op, std::unique_ptr<ASTNode> operand)
+    : ASTNode(location), op_(op), operand_(std::move(operand)) {
+    if (!operand_) {
+        throw InternalError("UnaryExpr: null operand");
+    }
+}
+
+UnaryExpr::~UnaryExpr() {
+    std::unique_ptr<ASTNode> worklist;
+    pushOntoWorklist(worklist, std::move(operand_));
+    destroyWorklist(worklist);
+}
+
+NodeKind UnaryExpr::kind() const noexcept {
+    return NodeKind::UnaryExpr;
+}
+
+void UnaryExpr::detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept {
+    pushOntoWorklist(worklistHead, std::move(operand_));
+}
+
+UnaryOperator UnaryExpr::op() const noexcept {
+    return op_;
+}
+
+const ASTNode& UnaryExpr::operand() const noexcept {
+    return *operand_;
+}
+
+BinaryExpr::BinaryExpr(BinaryOperator op, SourceLocation operatorLocation,
+                       std::unique_ptr<ASTNode> left, std::unique_ptr<ASTNode> right)
+    : ASTNode(left ? left->location() : SourceLocation{}), op_(op),
+      operatorLocation_(operatorLocation), left_(std::move(left)), right_(std::move(right)) {
+    if (!left_) {
+        throw InternalError("BinaryExpr: null left operand");
+    }
+    if (!right_) {
+        throw InternalError("BinaryExpr: null right operand");
+    }
+}
+
+BinaryExpr::~BinaryExpr() {
+    std::unique_ptr<ASTNode> worklist;
+    pushOntoWorklist(worklist, std::move(left_));
+    pushOntoWorklist(worklist, std::move(right_));
+    destroyWorklist(worklist);
+}
+
+NodeKind BinaryExpr::kind() const noexcept {
+    return NodeKind::BinaryExpr;
+}
+
+void BinaryExpr::detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept {
+    pushOntoWorklist(worklistHead, std::move(left_));
+    pushOntoWorklist(worklistHead, std::move(right_));
+}
+
+BinaryOperator BinaryExpr::op() const noexcept {
+    return op_;
+}
+
+SourceLocation BinaryExpr::operatorLocation() const noexcept {
+    return operatorLocation_;
+}
+
+const ASTNode& BinaryExpr::left() const noexcept {
+    return *left_;
+}
+
+const ASTNode& BinaryExpr::right() const noexcept {
+    return *right_;
+}
+
+LetDecl::LetDecl(SourceLocation location, std::string_view name, SourceLocation nameLocation,
+                 DeclaredType type, std::unique_ptr<ASTNode> initializer)
+    : ASTNode(location), name_(name), nameLocation_(nameLocation), type_(type),
+      initializer_(std::move(initializer)) {}
+
+LetDecl::~LetDecl() {
+    std::unique_ptr<ASTNode> worklist;
+    pushOntoWorklist(worklist, std::move(initializer_));
+    destroyWorklist(worklist);
+}
+
+NodeKind LetDecl::kind() const noexcept {
+    return NodeKind::LetDecl;
+}
+
+void LetDecl::detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept {
+    pushOntoWorklist(worklistHead, std::move(initializer_));
+}
+
+std::string_view LetDecl::name() const noexcept {
+    return name_;
+}
+
+SourceLocation LetDecl::nameLocation() const noexcept {
+    return nameLocation_;
+}
+
+DeclaredType LetDecl::type() const noexcept {
+    return type_;
+}
+
+const ASTNode* LetDecl::initializer() const noexcept {
+    return initializer_.get();
+}
+
+ConstDecl::ConstDecl(SourceLocation location, std::string_view name, SourceLocation nameLocation,
+                     DeclaredType type, std::unique_ptr<ASTNode> initializer)
+    : ASTNode(location), name_(name), nameLocation_(nameLocation), type_(type),
+      initializer_(std::move(initializer)) {}
+
+ConstDecl::~ConstDecl() {
+    std::unique_ptr<ASTNode> worklist;
+    pushOntoWorklist(worklist, std::move(initializer_));
+    destroyWorklist(worklist);
+}
+
+NodeKind ConstDecl::kind() const noexcept {
+    return NodeKind::ConstDecl;
+}
+
+void ConstDecl::detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept {
+    pushOntoWorklist(worklistHead, std::move(initializer_));
+}
+
+std::string_view ConstDecl::name() const noexcept {
+    return name_;
+}
+
+SourceLocation ConstDecl::nameLocation() const noexcept {
+    return nameLocation_;
+}
+
+DeclaredType ConstDecl::type() const noexcept {
+    return type_;
+}
+
+const ASTNode* ConstDecl::initializer() const noexcept {
+    return initializer_.get();
+}
+
+SymbolDecl::SymbolDecl(SourceLocation location, std::string_view name)
+    : ASTNode(location), name_(name) {}
+
+NodeKind SymbolDecl::kind() const noexcept {
+    return NodeKind::SymbolDecl;
+}
+
+void SymbolDecl::detachChildren([[maybe_unused]] std::unique_ptr<ASTNode>& worklistHead) noexcept {}
+
+std::string_view SymbolDecl::name() const noexcept {
+    return name_;
+}
+
+AssignStmt::AssignStmt(SourceLocation location, std::string_view name,
+                       std::unique_ptr<ASTNode> value)
+    : ASTNode(location), name_(name), value_(std::move(value)) {
+    if (!value_) {
+        throw InternalError("AssignStmt: null value");
+    }
+}
+
+AssignStmt::~AssignStmt() {
+    std::unique_ptr<ASTNode> worklist;
+    pushOntoWorklist(worklist, std::move(value_));
+    destroyWorklist(worklist);
+}
+
+NodeKind AssignStmt::kind() const noexcept {
+    return NodeKind::AssignStmt;
+}
+
+void AssignStmt::detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept {
+    pushOntoWorklist(worklistHead, std::move(value_));
+}
+
+std::string_view AssignStmt::name() const noexcept {
+    return name_;
+}
+
+const ASTNode& AssignStmt::value() const noexcept {
+    return *value_;
+}
+
+std::shared_ptr<const FunctionDecl> asFunctionDecl(const ModuleItem& item) {
+    if (!item) {
+        throw InternalError("asFunctionDecl: null module item");
+    }
+    if (item->kind() != NodeKind::FunctionDecl) {
+        return nullptr;
+    }
+    return std::static_pointer_cast<const FunctionDecl>(item);
 }
 
 } // namespace philios

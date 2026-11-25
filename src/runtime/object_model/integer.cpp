@@ -18,4 +18,8 @@ int Integer::exitStatus() const noexcept {
     return static_cast<int>(remainder);
 }
 
+bool Integer::equals(const Integer& other) const noexcept {
+    return value_ == other.value_;
+}
+
 } // namespace philios

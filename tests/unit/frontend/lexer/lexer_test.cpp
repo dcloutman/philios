@@ -5,6 +5,8 @@
 // accepted cases on the token stream. T-LEX-2, T-LEX-9, and T-LEX-12 run whole here (T-LEX-9's
 // line-break and end-of-file location cases are also CLI tests), plus T-LEX-11 part (a). Plan 0002
 // T2-LEX-5 and T2-LEX-6 run here; T2-LEX-1 to T2-LEX-3 and T2-LEX-7 are CLI golden tests.
+// Plan 0003 task 1 (§4.2, §5.1): the lexer-level parts of T3-LEX-1 to T3-LEX-6 run here; their
+// name-position, syntax, and declaration parts are parser, validator, and CLI tests.
 
 #include "frontend/lexer/lexer.hpp"
 #include "common/errors.hpp"
@@ -601,6 +603,341 @@ TEST_CASE("Lexer::tokenize may be called only once") {
     Lexer lexer("function main():\n    pass\n");
     tokenizeAndDiscard(lexer);
     CHECK_THROWS_AS(tokenizeAndDiscard(lexer), InternalError);
+}
+
+namespace {
+
+/// A LexicalError's location and message.
+struct LexicalFailure {
+    SourceLocation location{};
+    std::string message{};
+};
+
+/// The LexicalError raised for @p source, or no value if lexing succeeds (plan 0003 §5.1).
+[[nodiscard]] std::optional<LexicalFailure> lexicalFailure(std::string_view source) {
+    try {
+        [[maybe_unused]] const std::vector<Token> tokens = lexSource(source);
+    } catch (const LexicalError& error) {
+        return LexicalFailure{error.location(), error.what()};
+    }
+    return std::nullopt;
+}
+
+/// Kinds of the tokens from the first token of @p first through the next NEWLINE, inclusive.
+[[nodiscard]] Kinds statementKinds(const std::vector<Token>& tokens, TokenKind first) {
+    const std::size_t start = requireValue(indexOf(tokens, first));
+    Kinds kinds;
+    for (std::size_t index = start; index < tokens.size(); ++index) {
+        kinds.push_back(tokens[index].kind);
+        if (tokens[index].kind == TokenKind::Newline) {
+            break;
+        }
+    }
+    return kinds;
+}
+
+} // namespace
+
+TEST_CASE("T3-LEX-1 names that match the identifier rule lex as identifiers") {
+    for (const std::string_view name :
+         {"count", "_count", "__count", "count_2", "a1b2", "A", "_a"}) {
+        const std::string source = std::string(name) + "\n";
+        const std::vector<Token> tokens = lexSource(source);
+        REQUIRE(tokens.size() == 3);
+        CHECK(tokens[0].kind == TokenKind::Identifier);
+        CHECK(tokens[0].text == name);
+        CHECK(tokens[0].location == SourceLocation{1, 1});
+    }
+    SECTION("in let, const, and symbol name positions") {
+        const std::vector<Token> tokens = lineTokens("let _count: Integer = __count\n");
+        const Kinds expected = {TokenKind::KeywordLet, TokenKind::Identifier, TokenKind::Colon,
+                                TokenKind::TypeInteger, TokenKind::Assign,
+                                TokenKind::Identifier};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[1].text == "_count");
+        CHECK(tokens[5].text == "__count");
+        CHECK(kindsOf(lineTokens("const count_2: Integer = 1\n")) ==
+              Kinds{TokenKind::KeywordConst, TokenKind::Identifier, TokenKind::Colon,
+                    TokenKind::TypeInteger, TokenKind::Assign, TokenKind::IntegerLiteral});
+        CHECK(kindsOf(lineTokens("symbol a1b2\n")) ==
+              Kinds{TokenKind::KeywordSymbol, TokenKind::Identifier});
+    }
+}
+
+TEST_CASE("T3-LEX-2 a word with no letter before its first digit is invalid identifier") {
+    SECTION("alone, at the word's first byte") {
+        for (const std::string_view name : {"_", "__", "_1count", "__9a"}) {
+            const std::string source = std::string(name) + "\n";
+            const LexicalFailure failure = requireValue(lexicalFailure(source));
+            CHECK(failure.location == SourceLocation{1, 1});
+            CHECK(failure.message == "invalid identifier");
+        }
+    }
+    SECTION("as a function name") {
+        const LexicalFailure failure =
+            requireValue(lexicalFailure("function _():\n    pass\n"));
+        CHECK(failure.location == SourceLocation{1, 10});
+        CHECK(failure.message == "invalid identifier");
+    }
+    SECTION("as a parameter name") {
+        const LexicalFailure failure =
+            requireValue(lexicalFailure("function f(__: Integer):\n    pass\n"));
+        CHECK(failure.location == SourceLocation{1, 12});
+        CHECK(failure.message == "invalid identifier");
+    }
+    SECTION("as a let name") {
+        const LexicalFailure failure = requireValue(lexicalFailure("let _1count: Integer = 1\n"));
+        CHECK(failure.location == SourceLocation{1, 5});
+        CHECK(failure.message == "invalid identifier");
+    }
+    SECTION("as an expression operand") {
+        const LexicalFailure failure = requireValue(lexicalFailure("x = a == __9a\n"));
+        CHECK(failure.location == SourceLocation{1, 10});
+        CHECK(failure.message == "invalid identifier");
+    }
+    SECTION("1count keeps the existing literal-then-identifier error") {
+        const LexicalFailure failure = requireValue(lexicalFailure("1count\n"));
+        CHECK(failure.location == SourceLocation{1, 1});
+        CHECK(failure.message == "digit sequence immediately followed by an identifier");
+    }
+}
+
+TEST_CASE("T3-LEX-3 the plan 0003 reserved words lex as their own kinds") {
+    const auto reserved = std::to_array<std::pair<std::string_view, TokenKind>>({
+        {"let", TokenKind::KeywordLet},
+        {"const", TokenKind::KeywordConst},
+        {"true", TokenKind::KeywordTrue},
+        {"false", TokenKind::KeywordFalse},
+        {"symbol", TokenKind::KeywordSymbol},
+        {"Boolean", TokenKind::TypeBoolean},
+        {"Symbol", TokenKind::TypeSymbol},
+    });
+    static_assert(reserved.size() == 7);
+    for (const auto& [word, kind] : reserved) {
+        const std::string source = std::string(word) + "\n";
+        const std::vector<Token> tokens = lexSource(source);
+        REQUIRE_FALSE(tokens.empty());
+        CHECK(tokens[0].kind == kind);
+        CHECK(tokens[0].kind != TokenKind::Identifier);
+        CHECK(tokens[0].text == word);
+        CHECK(tokens[0].location == SourceLocation{1, 1});
+    }
+    SECTION("near words are identifiers") {
+        for (const std::string_view word : {"Let", "TRUE", "symbols", "boolean", "letx", "_true"}) {
+            const std::string source = std::string(word) + "\n";
+            const std::vector<Token> tokens = lexSource(source);
+            REQUIRE_FALSE(tokens.empty());
+            CHECK(tokens[0].kind == TokenKind::Identifier);
+            CHECK(tokens[0].text == word);
+        }
+    }
+    SECTION("?Boolean and ?Symbol are Question then the type word") {
+        CHECK(kindsOf(lineTokens("?Boolean\n")) ==
+              Kinds{TokenKind::Question, TokenKind::TypeBoolean});
+        CHECK(kindsOf(lineTokens("?Symbol\n")) ==
+              Kinds{TokenKind::Question, TokenKind::TypeSymbol});
+    }
+}
+
+TEST_CASE("T3-LEX-4 !, =, ==, and != use maximal munch with byte columns") {
+    SECTION("a==b") {
+        const std::vector<Token> tokens = lineTokens("a==b\n");
+        const Kinds expected = {TokenKind::Identifier, TokenKind::EqualEqual,
+                                TokenKind::Identifier};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[1].text == "==");
+        CHECK(tokens[1].location == SourceLocation{1, 2});
+        CHECK(tokens[2].location == SourceLocation{1, 4});
+    }
+    SECTION("a == b") {
+        const std::vector<Token> tokens = lineTokens("a == b\n");
+        const Kinds expected = {TokenKind::Identifier, TokenKind::EqualEqual,
+                                TokenKind::Identifier};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[1].location == SourceLocation{1, 3});
+        CHECK(tokens[2].location == SourceLocation{1, 6});
+    }
+    SECTION("a!=b") {
+        const std::vector<Token> tokens = lineTokens("a!=b\n");
+        const Kinds expected = {TokenKind::Identifier, TokenKind::BangEqual,
+                                TokenKind::Identifier};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[1].text == "!=");
+        CHECK(tokens[1].location == SourceLocation{1, 2});
+        CHECK(tokens[2].location == SourceLocation{1, 4});
+    }
+    SECTION("!a") {
+        const std::vector<Token> tokens = lineTokens("!a\n");
+        CHECK(kindsOf(tokens) == Kinds{TokenKind::Bang, TokenKind::Identifier});
+        REQUIRE(tokens.size() == 2);
+        CHECK(tokens[0].text == "!");
+        CHECK(tokens[0].location == SourceLocation{1, 1});
+        CHECK(tokens[1].location == SourceLocation{1, 2});
+    }
+    SECTION("a=b") {
+        const std::vector<Token> tokens = lineTokens("a=b\n");
+        const Kinds expected = {TokenKind::Identifier, TokenKind::Assign, TokenKind::Identifier};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[1].text == "=");
+        CHECK(tokens[1].location == SourceLocation{1, 2});
+        CHECK(tokens[2].location == SourceLocation{1, 3});
+    }
+    SECTION("=== is == then =") {
+        const std::vector<Token> tokens = lineTokens("===\n");
+        CHECK(kindsOf(tokens) == Kinds{TokenKind::EqualEqual, TokenKind::Assign});
+        REQUIRE(tokens.size() == 2);
+        CHECK(tokens[0].location == SourceLocation{1, 1});
+        CHECK(tokens[1].location == SourceLocation{1, 3});
+    }
+    SECTION("!== is != then =") {
+        const std::vector<Token> tokens = lineTokens("!==\n");
+        CHECK(kindsOf(tokens) == Kinds{TokenKind::BangEqual, TokenKind::Assign});
+        REQUIRE(tokens.size() == 2);
+        CHECK(tokens[0].location == SourceLocation{1, 1});
+        CHECK(tokens[1].location == SourceLocation{1, 3});
+    }
+    SECTION("= = is two =") {
+        const std::vector<Token> tokens = lineTokens("= =\n");
+        CHECK(kindsOf(tokens) == Kinds{TokenKind::Assign, TokenKind::Assign});
+        REQUIRE(tokens.size() == 2);
+        CHECK(tokens[0].location == SourceLocation{1, 1});
+        CHECK(tokens[1].location == SourceLocation{1, 3});
+    }
+    SECTION("! = is ! then =") {
+        const std::vector<Token> tokens = lineTokens("! =\n");
+        CHECK(kindsOf(tokens) == Kinds{TokenKind::Bang, TokenKind::Assign});
+        REQUIRE(tokens.size() == 2);
+        CHECK(tokens[0].location == SourceLocation{1, 1});
+        CHECK(tokens[1].location == SourceLocation{1, 3});
+    }
+    SECTION("! at end of file on exact-size storage") {
+        withExactStorage("function main():\n    return !", [](std::string_view source) {
+            const std::vector<Token> tokens = lexSource(source);
+            const std::size_t bang = requireValue(indexOf(tokens, TokenKind::Bang));
+            CHECK(tokens[bang].text == "!");
+            CHECK(tokens[bang].location == SourceLocation{2, 12});
+            REQUIRE(bang + 1 < tokens.size());
+            CHECK(tokens[bang + 1].kind == TokenKind::Newline);
+            CHECK(tokens.back().kind == TokenKind::EndOfInput);
+        });
+        withExactStorage("!", [](std::string_view source) {
+            const std::vector<Token> tokens = lexSource(source);
+            CHECK(kindsOf(tokens) ==
+                  Kinds{TokenKind::Bang, TokenKind::Newline, TokenKind::EndOfInput});
+        });
+    }
+    SECTION("= at end of file on exact-size storage") {
+        withExactStorage("a =", [](std::string_view source) {
+            const std::vector<Token> tokens = lexSource(source);
+            const Kinds expected = {TokenKind::Identifier, TokenKind::Assign, TokenKind::Newline,
+                                    TokenKind::EndOfInput};
+            CHECK(kindsOf(tokens) == expected);
+            REQUIRE(tokens.size() == expected.size());
+            CHECK(tokens[1].location == SourceLocation{1, 3});
+        });
+    }
+}
+
+TEST_CASE("T3-LEX-5 negative literals after =, ==, !=, and !") {
+    SECTION("let x: Integer = -1") {
+        const std::vector<Token> tokens = lineTokens("let x: Integer = -1\n");
+        const Kinds expected = {TokenKind::KeywordLet,  TokenKind::Identifier,
+                                TokenKind::Colon,       TokenKind::TypeInteger,
+                                TokenKind::Assign,      TokenKind::IntegerLiteral};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[5].integerValue == -1);
+        CHECK(tokens[5].text == "-1");
+        CHECK(tokens[5].location == SourceLocation{1, 18});
+    }
+    SECTION("x = -9223372036854775808 is INT64_MIN") {
+        const std::vector<Token> tokens = lineTokens("x = -9223372036854775808\n");
+        const Kinds expected = {TokenKind::Identifier, TokenKind::Assign,
+                                TokenKind::IntegerLiteral};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[2].integerValue == std::numeric_limits<std::int64_t>::min());
+        CHECK(tokens[2].location == SourceLocation{1, 5});
+    }
+    SECTION("a == -1 and a != -1") {
+        const std::vector<Token> equal = lineTokens("a == -1\n");
+        CHECK(kindsOf(equal) == Kinds{TokenKind::Identifier, TokenKind::EqualEqual,
+                                      TokenKind::IntegerLiteral});
+        REQUIRE(equal.size() == 3);
+        CHECK(equal[2].integerValue == -1);
+        CHECK(equal[2].location == SourceLocation{1, 6});
+
+        const std::vector<Token> notEqual = lineTokens("a != -1\n");
+        CHECK(kindsOf(notEqual) == Kinds{TokenKind::Identifier, TokenKind::BangEqual,
+                                         TokenKind::IntegerLiteral});
+        REQUIRE(notEqual.size() == 3);
+        CHECK(notEqual[2].integerValue == -1);
+        CHECK(notEqual[2].location == SourceLocation{1, 6});
+    }
+    SECTION("!-1") {
+        const std::vector<Token> tokens = lineTokens("!-1\n");
+        CHECK(kindsOf(tokens) == Kinds{TokenKind::Bang, TokenKind::IntegerLiteral});
+        REQUIRE(tokens.size() == 2);
+        CHECK(tokens[1].integerValue == -1);
+        CHECK(tokens[1].location == SourceLocation{1, 2});
+    }
+    SECTION("x = - 1 lexes - as Minus") {
+        const std::vector<Token> tokens = lineTokens("x = - 1\n");
+        const Kinds expected = {TokenKind::Identifier, TokenKind::Assign, TokenKind::Minus,
+                                TokenKind::IntegerLiteral};
+        CHECK(kindsOf(tokens) == expected);
+        REQUIRE(tokens.size() == expected.size());
+        CHECK(tokens[2].location == SourceLocation{1, 5});
+        CHECK(tokens[3].integerValue == 1);
+    }
+    SECTION("plan 0002 negative-literal errors apply at the - in the new contexts") {
+        CHECK(lexicalErrorAt("x = -0\n") == SourceLocation{1, 5});
+        CHECK(lexicalErrorAt("a == -007\n") == SourceLocation{1, 6});
+        CHECK(lexicalErrorAt("a != -9223372036854775809\n") == SourceLocation{1, 6});
+        CHECK(lexicalErrorAt("!-1abc\n") == SourceLocation{1, 2});
+    }
+}
+
+TEST_CASE("T3-LEX-6 ; continuation after =, after ==, and between let x: and the type") {
+    SECTION("after =") {
+        const std::vector<Token> tokens =
+            lexSource("function main():\n    let x: Integer =;\n        -1\n");
+        const Kinds expected = {TokenKind::KeywordLet,     TokenKind::Identifier,
+                                TokenKind::Colon,          TokenKind::TypeInteger,
+                                TokenKind::Assign,         TokenKind::IntegerLiteral,
+                                TokenKind::Newline};
+        CHECK(statementKinds(tokens, TokenKind::KeywordLet) == expected);
+        const std::size_t literal = requireValue(indexOf(tokens, TokenKind::IntegerLiteral));
+        CHECK(tokens[literal].integerValue == -1);
+        CHECK(tokens[literal].location == SourceLocation{3, 9});
+    }
+    SECTION("after ==") {
+        const std::vector<Token> tokens =
+            lexSource("function main():\n    return a ==;\n        b\n");
+        const Kinds expected = {TokenKind::KeywordReturn, TokenKind::Identifier,
+                                TokenKind::EqualEqual, TokenKind::Identifier,
+                                TokenKind::Newline};
+        CHECK(statementKinds(tokens, TokenKind::KeywordReturn) == expected);
+        const std::size_t equal = requireValue(indexOf(tokens, TokenKind::EqualEqual));
+        REQUIRE(equal + 1 < tokens.size());
+        CHECK(tokens[equal + 1].location == SourceLocation{3, 9});
+    }
+    SECTION("between let x: and the type") {
+        const std::vector<Token> tokens =
+            lexSource("function main():\n    let x:;\n        Integer = 1\n");
+        const Kinds expected = {TokenKind::KeywordLet,     TokenKind::Identifier,
+                                TokenKind::Colon,          TokenKind::TypeInteger,
+                                TokenKind::Assign,         TokenKind::IntegerLiteral,
+                                TokenKind::Newline};
+        CHECK(statementKinds(tokens, TokenKind::KeywordLet) == expected);
+        const std::size_t type = requireValue(indexOf(tokens, TokenKind::TypeInteger));
+        CHECK(tokens[type].location == SourceLocation{3, 9});
+    }
 }
 
 } // namespace philios::test

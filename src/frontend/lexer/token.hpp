@@ -2,7 +2,7 @@
 
 /// @file
 /// @brief Token kinds and the token record produced by the lexer (plan 0001 §3.3, D27; plan 0002
-///        §3.2).
+///        §3.2; plan 0003 §4.2).
 
 #include "common/errors.hpp"
 
@@ -12,10 +12,13 @@
 
 namespace philios {
 
-/// @brief Every token kind. Each of the 28 reserved words (plan 0002 §3.2) has its own keyword
-///        kind (plan 0001 D27); the lexer never emits a reserved word as TokenKind::Identifier.
+/// @brief Every token kind. Each of the 35 reserved words (plan 0002 §3.2; plan 0003 §4.2.2) has
+///        its own keyword kind (plan 0001 D27); the lexer never emits a reserved word as
+///        TokenKind::Identifier.
 enum class TokenKind {
-    Identifier,     ///< `[A-Za-z_][A-Za-z0-9_]*` that is not a reserved word.
+    Identifier,     ///< `[A-Za-z_][A-Za-z0-9_]*` that is not a reserved word and matches
+                    ///< `_*[A-Za-z][A-Za-z0-9_]*` (plan 0003 §4.2.1). Any other such word is
+                    ///< the lexical error `invalid identifier` at its first byte.
     IntegerLiteral, ///< Decimal literal, positive or negative (plan 0002 §3.2); value in
                     ///< Token::integerValue. A negative literal's text and location include
                     ///< its `-`.
@@ -27,6 +30,12 @@ enum class TokenKind {
     Minus,          ///< `-` that does not begin a negative integer literal (plan 0002 §3.2). Each
                     ///< `-` is its own token; no grammar rule accepts it in plan 0002.
     Question,       ///< `?`; used only as the nullable prefix of a type name (plan 0002 §3.3).
+    Bang,           ///< `!` not immediately followed by `=`; prefix logical NOT (plan 0003
+                    ///< §4.2.3).
+    Assign,         ///< `=` not immediately followed by `=`; declaration initializer and
+                    ///< assignment statement only (plan 0003 §4.2.3).
+    EqualEqual,     ///< `==`, one token by maximal munch (plan 0003 §4.2.3).
+    BangEqual,      ///< `!=`, one token by maximal munch (plan 0003 §4.2.3).
     Newline,        ///< End of a logical line.
     Indent,         ///< Indentation increased by one level (4 spaces).
     Dedent,         ///< Indentation decreased by one level.
@@ -66,6 +75,16 @@ enum class TokenKind {
     KeywordIsa,    ///< `isa`
     KeywordEcho,   ///< `echo`
     KeywordTypeof, ///< `typeof`
+
+    // Reserved by plan 0003 (§4.2.2, D9, D20). `true` and `false` are reserved literal keywords,
+    // not bindings; `Boolean` and `Symbol` are type names (OQ-15: `Symbol` is reserved).
+    KeywordLet,    ///< `let`
+    KeywordConst,  ///< `const`
+    KeywordTrue,   ///< `true`
+    KeywordFalse,  ///< `false`
+    KeywordSymbol, ///< `symbol`
+    TypeBoolean,   ///< `Boolean`
+    TypeSymbol,    ///< `Symbol`
 };
 
 /// @brief One token.

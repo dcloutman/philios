@@ -3,16 +3,20 @@
 /// @file
 /// @brief AST node classes, NodeKind, TypeName, DeclaredType, and the iterative-destruction
 ///        protocol (plan 0001 §3.4, §3.9, D3, D5, D45; plan 0002 §3.4, §3.8: DeclaredType and
-///        the EchoCall and TypeofCall pseudo-call nodes).
+///        the EchoCall and TypeofCall pseudo-call nodes; plan 0003 §4.12, §4.14.2: declarations,
+///        assignment, `Boolean` literals, the unary and binary operator nodes, and module items).
 ///
 /// Dependency rule (§7.1): this header includes nothing from `src/runtime/` or `src/analysis/`.
 /// ExecutionContext, Environment, and Completion are forward-declared; every `evaluate`
 /// definition for the concrete nodes lives in `src/runtime/evaluator/evaluate.cpp`.
 ///
-/// Ownership: nodes own their children through `std::unique_ptr`, except that each FunctionDecl is
-/// owned through `std::shared_ptr<const FunctionDecl>` shared by the module's Program and the
-/// Function object (D3). Nodes may hold `std::string_view`s into the module's source buffer; no
-/// node may outlive the Module (§3.9).
+/// Ownership: nodes own their children through `std::unique_ptr`, except module items (plan 0003
+/// §4.14.2, AD2). Each module item (a FunctionDecl, ConstDecl, or SymbolDecl) is owned through a
+/// ModuleItem (`std::shared_ptr<const ASTNode>`) held by the module's Program; a FunctionDecl item
+/// is also shared with its Function object through the pointer asFunctionDecl returns (D3).
+/// Function-scope declarations and statements are owned by their Block like every other
+/// statement. Every node that has a name owns its text as a `std::string`, so no node refers to
+/// the source buffer: only tokens do, and a node may safely outlive the Module.
 ///
 /// Destruction (§3.9, CERT DCL57): every destructor and detachChildren is `noexcept`, does not
 /// recurse once per node, and allocates nothing. A node's children are moved onto an intrusive
@@ -34,8 +38,9 @@ class ExecutionContext;
 class Environment;
 struct Completion;
 
-/// @brief One value per concrete node class. Used only by the validator, with `kind()` and a
-///        `static_cast` to the matching `final` class (§3.9).
+/// @brief One value per concrete node class. Used by the validator, Module::load, and
+///        asFunctionDecl, with `kind()` and a `static_cast` (or `std::static_pointer_cast`) to the
+///        matching `final` class (§3.9; plan 0003 §4.14.2).
 enum class NodeKind {
     FunctionDecl,
     Param,
@@ -50,6 +55,13 @@ enum class NodeKind {
     Identifier,
     EchoCall,   ///< `echo(argument)` pseudo-call (plan 0002 §3.5, §3.8).
     TypeofCall, ///< `typeof(argument)` pseudo-call (plan 0002 §3.5, §3.8).
+    LetDecl,        ///< `let name: Type [= expression]` (plan 0003 §4.6).
+    ConstDecl,      ///< `const name: Type [= expression]` (plan 0003 §4.7).
+    SymbolDecl,     ///< `symbol name` (plan 0003 §4.9).
+    AssignStmt,     ///< `name = expression` (plan 0003 §4.8).
+    BooleanLiteral, ///< `true` or `false` (plan 0003 §4.3).
+    UnaryExpr,      ///< A unary operator applied to one operand (plan 0003 §4.12).
+    BinaryExpr,     ///< A binary operator applied to two operands (plan 0003 §4.12).
 };
 
 /// @brief The type word of a parsed `typeName` (plan 0001 §3.4; plan 0002 §3.3, §3.4). Compared
@@ -60,14 +72,30 @@ enum class TypeName {
     Function, ///< `Function` (untyped function values, plan 0001 D16)
     Null,     ///< `null`
     Object,   ///< `Object`: accepts every non-`null` value (plan 0002 D9)
+    Boolean,  ///< `Boolean` (plan 0003 §4.3)
+    Symbol,   ///< `Symbol` (plan 0003 §4.3)
+};
+
+/// @brief The operator of a UnaryExpr (plan 0003 §4.12). New unary operators add enumerators,
+///        not node classes.
+enum class UnaryOperator {
+    Not, ///< `!` (plan 0003 §4.11.1)
+};
+
+/// @brief The operator of a BinaryExpr (plan 0003 §4.12). New binary operators add enumerators,
+///        not node classes.
+enum class BinaryOperator {
+    Equal,    ///< `==` (plan 0003 §4.11.2)
+    NotEqual, ///< `!=` (plan 0003 §4.11.3)
 };
 
 /// @brief A parsed `typeName` (plan 0002 §3.3, §3.4): a base type word and the optional `?`
 ///        nullable prefix.
 ///
-/// A plain aggregate stored by value in Param and FunctionDecl; it owns nothing. The nine
-/// declarable types are the five base words with `nullable == false` and `Integer`, `String`,
-/// `Function`, and `Object` with `nullable == true`. Invariant (enforced by the parser, not by
+/// A plain aggregate stored by value in Param, FunctionDecl, LetDecl, and ConstDecl; it owns
+/// nothing. The thirteen declarable types (plan 0003 §4.3) are the seven base words with
+/// `nullable == false` and `Integer`, `String`, `Function`, `Object`, `Boolean`, and `Symbol` with
+/// `nullable == true`. Invariant (enforced by the parser, not by
 /// this type): `nullable` is never true together with `TypeName::Null` (`?null` is a syntax
 /// error, D10). Unit tests may build other values directly.
 struct DeclaredType {
@@ -159,9 +187,10 @@ private:
 class Identifier final : public ASTNode {
 public:
     /// @param location Location of the identifier's first byte.
-    /// @param name View into the source buffer (or other storage outliving the node).
-    /// @throws Nothing.
-    Identifier(SourceLocation location, std::string_view name) noexcept;
+    /// @param name The identifier's text; copied into the node, so it need not outlive the node
+    ///        (plan 0003 §4.14.2, "Name storage").
+    /// @throws std::bad_alloc if copying @p name fails.
+    Identifier(SourceLocation location, std::string_view name);
 
     [[nodiscard]] NodeKind kind() const noexcept override;
     [[nodiscard]] Completion evaluate(ExecutionContext& context,
@@ -169,12 +198,12 @@ public:
         const override;
     void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
 
-    /// @brief The identifier's text; valid while the source buffer lives.
+    /// @brief The identifier's text: a view of the node's own copy, valid while the node lives.
     /// @throws Nothing.
     [[nodiscard]] std::string_view name() const noexcept;
 
 private:
-    std::string_view name_;
+    std::string name_;
 };
 
 /// @brief A decimal integer literal. Each evaluation creates a new `Integer` object (§3.9).
@@ -477,10 +506,11 @@ private:
 class Param final : public ASTNode {
 public:
     /// @param location Location of the parameter name.
-    /// @param name View into the source buffer.
+    /// @param name The parameter name; copied into the node, so it need not outlive the node
+    ///        (plan 0003 §4.14.2, "Name storage").
     /// @param type The declared type, including its nullability (plan 0002 §3.4).
-    /// @throws Nothing.
-    Param(SourceLocation location, std::string_view name, DeclaredType type) noexcept;
+    /// @throws std::bad_alloc if copying @p name fails.
+    Param(SourceLocation location, std::string_view name, DeclaredType type);
 
     [[nodiscard]] NodeKind kind() const noexcept override;
     [[nodiscard]] Completion evaluate(ExecutionContext& context,
@@ -488,6 +518,7 @@ public:
         const override;
     void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
 
+    /// @brief The parameter name: a view of the node's own copy, valid while the node lives.
     /// @throws Nothing.
     [[nodiscard]] std::string_view name() const noexcept;
     /// @brief The declared parameter type; checked against each argument by
@@ -496,24 +527,27 @@ public:
     [[nodiscard]] DeclaredType type() const noexcept;
 
 private:
-    std::string_view name_;
+    std::string name_;
     DeclaredType type_;
 };
 
 /// @brief `function name(params)[: typeName]:` followed by its body.
 ///
-/// Owned through `std::shared_ptr<const FunctionDecl>` (shared with the Function object, D3), so
-/// it is never put on another node's worklist; its own destructor runs the worklist loop over its
-/// children.
+/// A module item (plan 0003 §4.14.2): owned through the module's Program as a ModuleItem, and
+/// shared with the Function object through the `std::shared_ptr<const FunctionDecl>` that
+/// asFunctionDecl returns (same control block, D3). It is therefore never put on another node's
+/// worklist; its own destructor runs the worklist loop over its children.
 class FunctionDecl final : public ASTNode {
 public:
     /// @param location Location of the function name (declaration errors are reported there).
-    /// @param name View into the source buffer.
+    /// @param name The function name; copied into the node, so it need not outlive the node
+    ///        (plan 0003 §4.14.2, "Name storage").
     /// @param params Parameters in source order; ownership is taken.
     /// @param returnType The return annotation, or no value if omitted (allowed only for `main`).
     /// @param body The body; ownership is taken.
     /// @pre @p body and every element of @p params are non-null.
-    /// @throws InternalError if a precondition is violated.
+    /// @throws InternalError if a precondition is violated; std::bad_alloc if copying @p name
+    ///         fails.
     FunctionDecl(SourceLocation location, std::string_view name,
                  std::vector<std::unique_ptr<Param>> params,
                  std::optional<DeclaredType> returnType, std::unique_ptr<Block> body);
@@ -531,6 +565,7 @@ public:
         const override;
     void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
 
+    /// @brief The function name: a view of the node's own copy, valid while the node lives.
     /// @throws Nothing.
     [[nodiscard]] std::string_view name() const noexcept;
     /// @throws Nothing.
@@ -544,13 +579,386 @@ public:
     [[nodiscard]] const Block& body() const noexcept;
 
 private:
-    std::string_view name_;
+    std::string name_;
     std::vector<std::unique_ptr<Param>> params_;
     std::optional<DeclaredType> returnType_;
     std::unique_ptr<Block> body_;
 };
 
-/// @brief The parsed `program` production: module-level function declarations in source order.
-using Program = std::vector<std::shared_ptr<const FunctionDecl>>;
+/// @brief `true` or `false` (plan 0003 §4.3, §4.4). Evaluates to a `Boolean` with this value;
+///        whether a new object or an ExecutionContext-owned canonical instance is returned is
+///        decided by the evaluator (plan 0003 §4.3).
+class BooleanLiteral final : public ASTNode {
+public:
+    /// @param location Location of the `true` or `false` keyword.
+    /// @param value The literal's value.
+    /// @throws Nothing.
+    BooleanLiteral(SourceLocation location, bool value) noexcept;
+
+    [[nodiscard]] NodeKind kind() const noexcept override;
+    [[nodiscard]] Completion evaluate(ExecutionContext& context,
+                                      const std::shared_ptr<Environment>& environment)
+        const override;
+    /// @brief Does nothing: a BooleanLiteral has no children.
+    /// @throws Nothing; allocates nothing.
+    void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
+
+    /// @brief The literal's value.
+    /// @throws Nothing.
+    [[nodiscard]] bool value() const noexcept;
+
+private:
+    bool value_;
+};
+
+/// @brief A unary operator applied to one operand (plan 0003 §4.11.1, §4.12): `!primary`.
+///
+/// The single unary-operator node: a new unary operator adds a UnaryOperator enumerator, not a
+/// node class (§4.12). The parser guarantees the operand is a `primary` (never another `!`, DA5).
+class UnaryExpr final : public ASTNode {
+public:
+    /// @param location Location of the operator token (the expression's first byte).
+    /// @param op The operator.
+    /// @param operand The operand expression; ownership is taken.
+    /// @pre @p operand is non-null.
+    /// @throws InternalError if @p operand is null.
+    UnaryExpr(SourceLocation location, UnaryOperator op, std::unique_ptr<ASTNode> operand);
+
+    /// @brief Iterative destruction of the operand (plan 0003 §4.14.2, §6.1).
+    /// @throws Nothing; allocates nothing.
+    ~UnaryExpr() override;
+    UnaryExpr(const UnaryExpr&) = delete;
+    UnaryExpr& operator=(const UnaryExpr&) = delete;
+    UnaryExpr(UnaryExpr&&) = delete;
+    UnaryExpr& operator=(UnaryExpr&&) = delete;
+
+    [[nodiscard]] NodeKind kind() const noexcept override;
+
+    /// @brief Evaluates the operator (plan 0003 §4.11.1, §4.14.1).
+    ///
+    /// For `Not`: the evaluation-depth guard, then the operand into an owning local, then the
+    /// unconditional `ObjectType::Boolean` check.
+    /// @return A Normal completion holding a `Boolean` that is the negation of the operand.
+    /// @throws RuntimeError of kind OperandType at the operand's first byte if the operand is not
+    ///         a `Boolean`; RuntimeError of kind EvaluationDepthExceeded; any error raised by the
+    ///         operand; InternalError; std::bad_alloc.
+    [[nodiscard]] Completion evaluate(ExecutionContext& context,
+                                      const std::shared_ptr<Environment>& environment)
+        const override;
+    void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
+
+    /// @brief The operator.
+    /// @throws Nothing.
+    [[nodiscard]] UnaryOperator op() const noexcept;
+
+    /// @brief The operand expression.
+    /// @pre detachChildren has not been called.
+    /// @throws Nothing.
+    [[nodiscard]] const ASTNode& operand() const noexcept;
+
+private:
+    UnaryOperator op_;
+    std::unique_ptr<ASTNode> operand_;
+};
+
+/// @brief A binary operator applied to two operands (plan 0003 §4.11.2, §4.11.3, §4.12):
+///        `left == right` or `left != right`.
+///
+/// The single binary-operator node: a new binary operator adds a BinaryOperator enumerator, not a
+/// node class (§4.12). Equality chains are left-associative (D16), so `a == b == c` is a
+/// BinaryExpr whose left operand is the BinaryExpr `a == b`.
+class BinaryExpr final : public ASTNode {
+public:
+    /// @param op The operator.
+    /// @param operatorLocation Location of the operator token (`==` or `!=`).
+    /// @param left The left operand; ownership is taken. Its location is the expression's.
+    /// @param right The right operand; ownership is taken.
+    /// @pre @p left and @p right are non-null.
+    /// @throws InternalError if a precondition is violated.
+    BinaryExpr(BinaryOperator op, SourceLocation operatorLocation, std::unique_ptr<ASTNode> left,
+               std::unique_ptr<ASTNode> right);
+
+    /// @brief Iterative destruction of both operands (plan 0003 §4.14.2, §6.1).
+    /// @throws Nothing; allocates nothing.
+    ~BinaryExpr() override;
+    BinaryExpr(const BinaryExpr&) = delete;
+    BinaryExpr& operator=(const BinaryExpr&) = delete;
+    BinaryExpr(BinaryExpr&&) = delete;
+    BinaryExpr& operator=(BinaryExpr&&) = delete;
+
+    [[nodiscard]] NodeKind kind() const noexcept override;
+
+    /// @brief Evaluates the operator (plan 0003 §4.11.2–§4.11.4).
+    ///
+    /// The evaluation-depth guard, then the left operand completely, then the right operand
+    /// completely (D5), each into an owning local, then valuesEqual (D11). Equality never fails.
+    /// @return A Normal completion holding a `Boolean`: valuesEqual for `Equal`, its negation for
+    ///         `NotEqual`.
+    /// @throws RuntimeError of kind EvaluationDepthExceeded; any error raised by an operand
+    ///         (if the left operand fails, the right is not evaluated); InternalError;
+    ///         std::bad_alloc.
+    [[nodiscard]] Completion evaluate(ExecutionContext& context,
+                                      const std::shared_ptr<Environment>& environment)
+        const override;
+    void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
+
+    /// @brief The operator.
+    /// @throws Nothing.
+    [[nodiscard]] BinaryOperator op() const noexcept;
+
+    /// @brief Location of the operator token.
+    /// @throws Nothing.
+    [[nodiscard]] SourceLocation operatorLocation() const noexcept;
+
+    /// @brief The left operand.
+    /// @pre detachChildren has not been called.
+    /// @throws Nothing.
+    [[nodiscard]] const ASTNode& left() const noexcept;
+
+    /// @brief The right operand.
+    /// @pre detachChildren has not been called.
+    /// @throws Nothing.
+    [[nodiscard]] const ASTNode& right() const noexcept;
+
+private:
+    BinaryOperator op_;
+    SourceLocation operatorLocation_;
+    std::unique_ptr<ASTNode> left_;
+    std::unique_ptr<ASTNode> right_;
+};
+
+/// @brief `let name: typeName [= expression]` (plan 0003 §4.4, §4.6). A function-scope statement
+///        only (`let` at module level is a syntax error, D13).
+class LetDecl final : public ASTNode {
+public:
+    /// @param location Location of the `let` keyword (`initializer required` is reported there).
+    /// @param name The declared name; copied into the node, so it need not outlive the node
+    ///        (plan 0003 §4.14.2, "Name storage").
+    /// @param nameLocation Location of the declared name (name errors are reported there).
+    /// @param type The declared type, including its nullability.
+    /// @param initializer The initializer expression, or null if omitted; ownership is taken.
+    /// @throws std::bad_alloc if copying @p name fails.
+    LetDecl(SourceLocation location, std::string_view name, SourceLocation nameLocation,
+            DeclaredType type, std::unique_ptr<ASTNode> initializer);
+
+    /// @brief Iterative destruction of the initializer (plan 0003 §4.14.2).
+    /// @throws Nothing; allocates nothing.
+    ~LetDecl() override;
+    LetDecl(const LetDecl&) = delete;
+    LetDecl& operator=(const LetDecl&) = delete;
+    LetDecl(LetDecl&&) = delete;
+    LetDecl& operator=(LetDecl&&) = delete;
+
+    [[nodiscard]] NodeKind kind() const noexcept override;
+
+    /// @brief Binds the variable in @p environment (plan 0003 §4.6, §4.14.1).
+    ///
+    /// The evaluation-depth guard; then, if there is an initializer, it is evaluated into an owning
+    /// local and checked unconditionally with matchesDeclaredType against type(); without one the
+    /// variable is bound to the context's NullObject (the validator guarantees the type is
+    /// nullable). Binds with BindingKind::Variable and type().
+    /// @return A Normal completion whose value is the context's NullObject.
+    /// @throws RuntimeError of kind AssignmentType at the initializer's first byte if the value
+    ///         is not accepted; RuntimeError of kind EvaluationDepthExceeded; any error raised by
+    ///         the initializer; InternalError (including the name already being bound in
+    ///         @p environment); std::bad_alloc.
+    [[nodiscard]] Completion evaluate(ExecutionContext& context,
+                                      const std::shared_ptr<Environment>& environment)
+        const override;
+    void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
+
+    /// @brief The declared name: a view of the node's own copy, valid while the node lives.
+    /// @throws Nothing.
+    [[nodiscard]] std::string_view name() const noexcept;
+
+    /// @brief Location of the declared name.
+    /// @throws Nothing.
+    [[nodiscard]] SourceLocation nameLocation() const noexcept;
+
+    /// @brief The declared type.
+    /// @throws Nothing.
+    [[nodiscard]] DeclaredType type() const noexcept;
+
+    /// @brief The initializer (borrowed, nullable); null if omitted or after detachChildren.
+    /// @throws Nothing.
+    [[nodiscard]] const ASTNode* initializer() const noexcept;
+
+private:
+    std::string name_;
+    SourceLocation nameLocation_;
+    DeclaredType type_;
+    std::unique_ptr<ASTNode> initializer_;
+};
+
+/// @brief `const name: typeName [= expression]` (plan 0003 §4.4, §4.7). Used at module level (as
+///        a module item) and in function scope.
+///
+/// At module level it is owned through a ModuleItem and never put on a worklist; in function scope
+/// it is owned by its Block (plan 0003 §4.14.2).
+class ConstDecl final : public ASTNode {
+public:
+    /// @param location Location of the `const` keyword (`initializer required` is reported
+    ///        there).
+    /// @param name The declared name; copied into the node, so it need not outlive the node
+    ///        (plan 0003 §4.14.2, "Name storage").
+    /// @param nameLocation Location of the declared name (name errors are reported there).
+    /// @param type The declared type, including its nullability.
+    /// @param initializer The initializer expression, or null if omitted; ownership is taken.
+    /// @throws std::bad_alloc if copying @p name fails.
+    ConstDecl(SourceLocation location, std::string_view name, SourceLocation nameLocation,
+              DeclaredType type, std::unique_ptr<ASTNode> initializer);
+
+    /// @brief Iterative destruction of the initializer (plan 0003 §4.14.2).
+    /// @throws Nothing; allocates nothing.
+    ~ConstDecl() override;
+    ConstDecl(const ConstDecl&) = delete;
+    ConstDecl& operator=(const ConstDecl&) = delete;
+    ConstDecl(ConstDecl&&) = delete;
+    ConstDecl& operator=(ConstDecl&&) = delete;
+
+    [[nodiscard]] NodeKind kind() const noexcept override;
+
+    /// @brief Binds the constant in @p environment (plan 0003 §4.7, §4.14.1).
+    ///
+    /// The evaluation-depth guard. With a nullable type and no initializer, or a NullLiteral
+    /// initializer, the initializer is not evaluated and the constant is bound to the context's
+    /// NullObject (unassigned). Otherwise the initializer is evaluated into an owning local; a
+    /// nullable type with a `null` value fails, then matchesDeclaredType is checked
+    /// unconditionally. Binds with BindingKind::Constant and type().
+    /// @return A Normal completion whose value is the context's NullObject.
+    /// @throws RuntimeError of kind ConstantNullWrite or AssignmentType at the initializer's first
+    ///         byte; RuntimeError of kind EvaluationDepthExceeded; any error raised by the
+    ///         initializer; InternalError (including the name already being bound in
+    ///         @p environment); std::bad_alloc.
+    [[nodiscard]] Completion evaluate(ExecutionContext& context,
+                                      const std::shared_ptr<Environment>& environment)
+        const override;
+    void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
+
+    /// @brief The declared name: a view of the node's own copy, valid while the node lives.
+    /// @throws Nothing.
+    [[nodiscard]] std::string_view name() const noexcept;
+
+    /// @brief Location of the declared name.
+    /// @throws Nothing.
+    [[nodiscard]] SourceLocation nameLocation() const noexcept;
+
+    /// @brief The declared type.
+    /// @throws Nothing.
+    [[nodiscard]] DeclaredType type() const noexcept;
+
+    /// @brief The initializer (borrowed, nullable); null if omitted or after detachChildren.
+    /// @throws Nothing.
+    [[nodiscard]] const ASTNode* initializer() const noexcept;
+
+private:
+    std::string name_;
+    SourceLocation nameLocation_;
+    DeclaredType type_;
+    std::unique_ptr<ASTNode> initializer_;
+};
+
+/// @brief `symbol name` (plan 0003 §4.4, §4.9). Used at module level (as a module item) and in
+///        function scope. Has no children.
+class SymbolDecl final : public ASTNode {
+public:
+    /// @param location Location of the declared name (every SymbolDecl error is reported there,
+    ///        plan 0003 §5.3; as for FunctionDecl, the keyword location is not kept).
+    /// @param name The declared name; copied into the node, so it need not outlive the node
+    ///        (plan 0003 §4.14.2, "Name storage").
+    /// @throws std::bad_alloc if copying @p name fails.
+    SymbolDecl(SourceLocation location, std::string_view name);
+
+    [[nodiscard]] NodeKind kind() const noexcept override;
+
+    /// @brief Creates a new `Symbol` and binds it in @p environment with BindingKind::Symbol
+    ///        (plan 0003 §4.9; DA4: a new symbol each time the declaration executes).
+    /// @return A Normal completion whose value is the context's NullObject.
+    /// @throws RuntimeError of kind EvaluationDepthExceeded; InternalError (including the name
+    ///         already being bound in @p environment); std::bad_alloc.
+    [[nodiscard]] Completion evaluate(ExecutionContext& context,
+                                      const std::shared_ptr<Environment>& environment)
+        const override;
+    /// @brief Does nothing: a SymbolDecl has no children.
+    /// @throws Nothing; allocates nothing.
+    void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
+
+    /// @brief The declared name: a view of the node's own copy, valid while the node lives.
+    /// @throws Nothing.
+    [[nodiscard]] std::string_view name() const noexcept;
+
+private:
+    std::string name_;
+};
+
+/// @brief `name = expression` (plan 0003 §4.4, §4.8). A statement only (D7).
+class AssignStmt final : public ASTNode {
+public:
+    /// @param location Location of the target name (the statement's first byte; target errors are
+    ///        reported there).
+    /// @param name The target name; copied into the node, so it need not outlive the node
+    ///        (plan 0003 §4.14.2, "Name storage").
+    /// @param value The right-hand side; ownership is taken.
+    /// @pre @p value is non-null.
+    /// @throws InternalError if @p value is null; std::bad_alloc if copying @p name fails.
+    AssignStmt(SourceLocation location, std::string_view name, std::unique_ptr<ASTNode> value);
+
+    /// @brief Iterative destruction of the right-hand side (plan 0003 §4.14.2).
+    /// @throws Nothing; allocates nothing.
+    ~AssignStmt() override;
+    AssignStmt(const AssignStmt&) = delete;
+    AssignStmt& operator=(const AssignStmt&) = delete;
+    AssignStmt(AssignStmt&&) = delete;
+    AssignStmt& operator=(AssignStmt&&) = delete;
+
+    [[nodiscard]] NodeKind kind() const noexcept override;
+
+    /// @brief Executes the assignment (plan 0003 §4.8 steps 1–4, §4.14.3).
+    ///
+    /// The evaluation-depth guard; step 1 (target binding and, for a constant, its unassigned
+    /// state through Environment::bindingInfo and lookup); step 2 (the right-hand side into an
+    /// owning local); step 3 (null and matchesDeclaredType checks); step 4 (Environment::assign).
+    /// If any step fails, the target keeps its previous value.
+    /// @return A Normal completion whose value is the context's NullObject.
+    /// @throws RuntimeError of kind ConstantReassignment at the target, or ConstantNullWrite or
+    ///         AssignmentType at the right-hand side's first byte; RuntimeError of kind
+    ///         EvaluationDepthExceeded; any error raised by the right-hand side; InternalError
+    ///         (including a Function or Symbol binding as the target); std::bad_alloc.
+    [[nodiscard]] Completion evaluate(ExecutionContext& context,
+                                      const std::shared_ptr<Environment>& environment)
+        const override;
+    void detachChildren(std::unique_ptr<ASTNode>& worklistHead) noexcept override;
+
+    /// @brief The target name: a view of the node's own copy, valid while the node lives.
+    /// @throws Nothing.
+    [[nodiscard]] std::string_view name() const noexcept;
+
+    /// @brief The right-hand side.
+    /// @pre detachChildren has not been called.
+    /// @throws Nothing.
+    [[nodiscard]] const ASTNode& value() const noexcept;
+
+private:
+    std::string name_;
+    std::unique_ptr<ASTNode> value_;
+};
+
+/// @brief One `moduleItem` (§4.4): a FunctionDecl, ConstDecl, or SymbolDecl.
+using ModuleItem = std::shared_ptr<const ASTNode>;
+
+/// @brief The parsed `program` production: every module item in source order.
+///
+/// Invariant (plan 0003 §4.14.2): every item is non-null, and its `kind()` is
+/// NodeKind::FunctionDecl, NodeKind::ConstDecl, or NodeKind::SymbolDecl. The parser guarantees
+/// it; the validator and Module::load check it and throw InternalError on a violation.
+using Program = std::vector<ModuleItem>;
+
+/// @brief The FunctionDecl that @p item points to, sharing ownership with @p item, or null if
+///        @p item is not a FunctionDecl. Uses `kind()` and `std::static_pointer_cast`.
+/// @param item A module item; borrowed.
+/// @return A pointer that shares @p item's control block (plan 0001 D3), or null if
+///         `item->kind()` is not NodeKind::FunctionDecl.
+/// @throws InternalError if @p item is null.
+[[nodiscard]] std::shared_ptr<const FunctionDecl> asFunctionDecl(const ModuleItem& item);
 
 } // namespace philios

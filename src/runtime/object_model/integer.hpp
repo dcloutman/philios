@@ -29,6 +29,10 @@ public:
     /// @throws Nothing.
     [[nodiscard]] int exitStatus() const noexcept;
 
+    /// @brief Whether this Integer holds the same exact `std::int64_t` value as @p other.
+    /// @throws Nothing.
+    [[nodiscard]] bool equals(const Integer& other) const noexcept;
+
 private:
     std::int64_t value_;
 };

@@ -15,7 +15,7 @@
 namespace philios::test {
 
 /// @brief Creates an Identifier node.
-/// @param name Must outlive the node (string literals are suitable).
+/// @param name Copied into the node, so it need not outlive the node (plan 0003 §4.14.2).
 /// @throws std::bad_alloc.
 [[nodiscard]] std::unique_ptr<Identifier> makeIdentifier(std::string_view name,
                                                          SourceLocation location = {});
@@ -26,7 +26,7 @@ namespace philios::test {
                                                                  SourceLocation location = {});
 
 /// @brief Creates `callee(arguments...)` whose callee identifier is at @p calleeLocation.
-/// @param callee Must outlive the node.
+/// @param callee Copied into the callee Identifier, so it need not outlive the node.
 /// @throws std::bad_alloc; InternalError if an argument is null.
 [[nodiscard]] std::unique_ptr<CallExpr> makeCall(std::string_view callee,
                                                  std::vector<std::unique_ptr<ASTNode>> arguments,

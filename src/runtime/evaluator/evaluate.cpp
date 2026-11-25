@@ -292,4 +292,42 @@ Completion FunctionDecl::evaluate(ExecutionContext& context,
     throw InternalError("FunctionDecl::evaluate must not be called");
 }
 
+// Plan 0003 task 2 placeholders (DR-1 option a): compile-only `evaluate` definitions for the new
+// nodes, so the build links. Task 9 replaces each body with the documented behavior.
+
+Completion BooleanLiteral::evaluate(ExecutionContext& /*context*/,
+                                    const std::shared_ptr<Environment>& /*environment*/) const {
+    throwInternal("BooleanLiteral::evaluate: plan 0003 task 2 placeholder");
+}
+
+Completion UnaryExpr::evaluate(ExecutionContext& /*context*/,
+                               const std::shared_ptr<Environment>& /*environment*/) const {
+    throwInternal("UnaryExpr::evaluate: plan 0003 task 2 placeholder");
+}
+
+Completion BinaryExpr::evaluate(ExecutionContext& /*context*/,
+                                const std::shared_ptr<Environment>& /*environment*/) const {
+    throwInternal("BinaryExpr::evaluate: plan 0003 task 2 placeholder");
+}
+
+Completion LetDecl::evaluate(ExecutionContext& /*context*/,
+                             const std::shared_ptr<Environment>& /*environment*/) const {
+    throwInternal("LetDecl::evaluate: plan 0003 task 2 placeholder");
+}
+
+Completion ConstDecl::evaluate(ExecutionContext& /*context*/,
+                               const std::shared_ptr<Environment>& /*environment*/) const {
+    throwInternal("ConstDecl::evaluate: plan 0003 task 2 placeholder");
+}
+
+Completion SymbolDecl::evaluate(ExecutionContext& /*context*/,
+                                const std::shared_ptr<Environment>& /*environment*/) const {
+    throwInternal("SymbolDecl::evaluate: plan 0003 task 2 placeholder");
+}
+
+Completion AssignStmt::evaluate(ExecutionContext& /*context*/,
+                                const std::shared_ptr<Environment>& /*environment*/) const {
+    throwInternal("AssignStmt::evaluate: plan 0003 task 2 placeholder");
+}
+
 } // namespace philios

@@ -16,8 +16,9 @@ namespace philios {
 /// @brief One loaded file (in this plan, exactly one: `main.phil`).
 ///
 /// Owns, in this declaration order, the source buffer (never mutated or moved after loading), the
-/// AST, and the module Environment, which binds one Function per declaration. Tokens and AST nodes
-/// hold views into the buffer, so a Module never moves: copy and move are deleted, and it is only
+/// AST, and the module Environment, which binds one Function per declaration. Only tokens, which
+/// live only during load(), hold views into the buffer; AST nodes own their names (plan 0003
+/// §4.14.2, "Name storage"). A Module never moves: copy and move are deleted, and it is only
 /// ever reachable through the `std::unique_ptr` returned by load(). A Module is returned only
 /// after lexing, parsing, validation, and function registration all succeed.
 class Module final {
@@ -57,7 +58,9 @@ public:
     /// @brief Breaks the module env -> Function -> module env cycle deterministically (D3).
     ///
     /// Releases the module environment's bindings by swapping its table with an empty local, then
-    /// releases the AST, and the source buffer last. Safe to call more than once.
+    /// releases the AST, and the source buffer last. Safe to call more than once. No AST node
+    /// views the buffer (only tokens do, during load()), so a Function still held elsewhere keeps
+    /// a self-contained FunctionDecl (plan 0003 §4.14.2).
     /// @post The Module holds no bindings, no AST, and no source; all Functions and the module
     ///       Environment are destroyed unless an external owner still holds them.
     /// @throws Nothing; allocates nothing.

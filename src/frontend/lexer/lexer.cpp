@@ -47,7 +47,7 @@ namespace {
 
 [[nodiscard]] std::optional<TokenKind> keywordKind(std::string_view text) noexcept {
     using Pair = std::pair<std::string_view, TokenKind>;
-    static constexpr auto kKeywords = std::array<Pair, 28>{
+    static constexpr auto kKeywords = std::array<Pair, 35>{
         Pair{"function", TokenKind::KeywordFunction},
         Pair{"return", TokenKind::KeywordReturn},
         Pair{"null", TokenKind::KeywordNull},
@@ -76,6 +76,13 @@ namespace {
         Pair{"isa", TokenKind::KeywordIsa},
         Pair{"echo", TokenKind::KeywordEcho},
         Pair{"typeof", TokenKind::KeywordTypeof},
+        Pair{"let", TokenKind::KeywordLet},
+        Pair{"const", TokenKind::KeywordConst},
+        Pair{"true", TokenKind::KeywordTrue},
+        Pair{"false", TokenKind::KeywordFalse},
+        Pair{"symbol", TokenKind::KeywordSymbol},
+        Pair{"Boolean", TokenKind::TypeBoolean},
+        Pair{"Symbol", TokenKind::TypeSymbol},
     };
 
     for (const auto& [word, kind] : kKeywords) {
@@ -84,6 +91,17 @@ namespace {
         }
     }
     return std::nullopt;
+}
+
+[[nodiscard]] bool isValidIdentifier(std::string_view text) noexcept {
+    std::size_t index = 0;
+    while (index < text.size() && text[index] == '_') {
+        ++index;
+    }
+    if (index >= text.size()) {
+        return false;
+    }
+    return isAsciiLetter(static_cast<unsigned char>(text[index]));
 }
 
 } // namespace
@@ -170,7 +188,9 @@ std::vector<Token> Lexer::tokenize() {
         }
         const TokenKind previous = tokens.back().kind;
         return previous == TokenKind::LeftParen || previous == TokenKind::Comma ||
-               previous == TokenKind::KeywordReturn;
+               previous == TokenKind::KeywordReturn || previous == TokenKind::Assign ||
+               previous == TokenKind::EqualEqual || previous == TokenKind::BangEqual ||
+               previous == TokenKind::Bang;
     };
 
     const auto applyIndentation = [&](SourceLocation tokenLocation) {
@@ -565,6 +585,34 @@ std::vector<Token> Lexer::tokenize() {
             pendingContinuation.reset();
             continue;
         }
+        if (*byte == static_cast<unsigned char>('!')) {
+            const std::optional<unsigned char> next = peek(1);
+            if (next && *next == static_cast<unsigned char>('=')) {
+                addTokenFromSource(TokenKind::BangEqual, tokenLocation, position_, 2U);
+                consumeByte();
+                consumeByte();
+            } else {
+                addTokenFromSource(TokenKind::Bang, tokenLocation, position_, 1U);
+                consumeByte();
+            }
+            lineHasCode = true;
+            pendingContinuation.reset();
+            continue;
+        }
+        if (*byte == static_cast<unsigned char>('=')) {
+            const std::optional<unsigned char> next = peek(1);
+            if (next && *next == static_cast<unsigned char>('=')) {
+                addTokenFromSource(TokenKind::EqualEqual, tokenLocation, position_, 2U);
+                consumeByte();
+                consumeByte();
+            } else {
+                addTokenFromSource(TokenKind::Assign, tokenLocation, position_, 1U);
+                consumeByte();
+            }
+            lineHasCode = true;
+            pendingContinuation.reset();
+            continue;
+        }
         if (*byte == static_cast<unsigned char>('-')) {
             if (negativeLiteralContext()) {
                 const std::optional<unsigned char> next = peek(1);
@@ -628,6 +676,9 @@ std::vector<Token> Lexer::tokenize() {
             }
             const std::string_view text = source_.substr(start, position_ - start);
             const std::optional<TokenKind> keyword = keywordKind(text);
+            if (!keyword.has_value() && !isValidIdentifier(text)) {
+                throwLexical(tokenLocation, "invalid identifier");
+            }
             addTokenFromSource(keyword.value_or(TokenKind::Identifier), tokenLocation, start,
                                position_ - start);
             lineHasCode = true;

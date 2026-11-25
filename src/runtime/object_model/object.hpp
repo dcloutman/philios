@@ -16,6 +16,8 @@ enum class ObjectType {
     String,   ///< String
     Null,     ///< NullObject
     Function, ///< Function
+    Boolean,  ///< Boolean (plan 0003 §4.3)
+    Symbol,   ///< Symbol (plan 0003 §4.3, §4.9)
 };
 
 /// @brief Ancestor of every Philios value (D1). There are no native primitives.
@@ -39,7 +41,7 @@ protected:
     Object() noexcept = default;
 };
 
-/// @brief Base of the built-in immutable types (`Integer`, `String`).
+/// @brief Base of the built-in immutable types (`Integer`, `String`, `Boolean`).
 ///
 /// Contents never change after construction, but lifetime is still governed by owning
 /// references: hold an owning reference across reentrant calls. Must not hold owning references

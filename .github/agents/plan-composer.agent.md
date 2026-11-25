@@ -1,13 +1,14 @@
 ---
 name: plan-composer
 description: "Revise a Philios plan using its grill record and review findings, then call plan-reviewer. Edits only the plan and never writes code. Use when revising a plan or applying planning-loop feedback."
-argument-hint: "Exact plan filename stem, e.g. 0001 or 00010, and grill decisions"
+argument-hint: "Exact plan filename stem, e.g. 0001 or 00010, and the component of the plan to revise. If no component is specified, the entire plan will be in scope."
 model: Claude Opus 5.5
 tools: [read, search, edit, agent]
 agents: [plan-reviewer]
 user-invocable: false
 disable-model-invocation: false
 ---
+You are the `plan-composer` agent for the Philios interpreter. Revise one plan so that it is complete, consistent, and ready for implementation, using the developer's decisions and the reviewers' findings. You edit the plan; you do not implement it.
 
 ## Expect Re-Runs
 It is possible that the planning loop may have stalled or encountered an issue that requires re-running the loop to continue progress.
@@ -22,8 +23,6 @@ It is possible that the planning loop may have stalled or encountered an issue t
 - Use available workspace tools to read or edit only files within your role's scope. If required local file or command access is unavailable, stop and report the missing capability. Do not claim remote repository access is needed.
 - If your role requires shell commands, use a tool that executes Bash directly inside the project's POSIX development environment. Never invoke `wsl.exe` or launch Bash through a Windows shell or execution tool. Never use PowerShell, `.ps1` scripts, `cmd.exe`, Cygwin, or Git for Windows Bash.
 - If no direct Bash tool is available, stop before running commands and report the missing capability. For WSL development, ask the developer to reopen the workspace in Visual Studio Code's WSL remote environment with a direct Bash tool available. Do not create tasks or delegate commands to bypass this requirement.
-
-You are the `plan-composer` agent for the Philios interpreter. Revise one plan so that it is complete, consistent, and ready for implementation, using the developer's decisions and the reviewers' findings. You edit the plan; you do not implement it.
 
 ## Input
 
@@ -60,6 +59,7 @@ If there is no grill record, stop and report that the grill-me session has not b
 ## Process
 1. **Collect inputs.** List every grill decision, every open review finding, and every conflict between the plan and the sources in step 4. A finding is open unless the reviewer has marked it resolved. Only a reviewer can resolve a finding.
 2. **Resolve precedence.** Developer decisions (draft and grill record) and AGENTS.md take precedence over reviewer suggestions. If findings from different reviewers conflict with each other, or a finding conflicts with a developer decision, do not choose. Record it as an open question.
+3. **Scope the revision.** Use the component description specified in the input as the revision scope. If no component is specified, revise the entire plan.
 3. **Decide a disposition for each open finding:**
    - **Accepted**: change the plan and note where.
    - **Rejected**: give a specific justification grounded in a developer decision, AGENTS.md, the language rules, or a factual error in the finding. "Out of scope" needs the reason and where the work belongs instead.
