@@ -27,6 +27,10 @@ namespace philios {
 /// like any expression, so `typeof(main)` and `typeof(nope)` are declaration errors at `main` and
 /// `nope`.
 ///
+/// Plan 0003 §4.10, §4.14.1 (AD1): static types are computed inside `validator.cpp` and used only
+/// during this call. The validator returns no artifact, writes no side table, and writes nothing
+/// into the AST.
+///
 /// @param program The parsed program; borrowed for the duration of the call. Must contain only
 ///        parser-produced nodes (never test-only ASTNode subclasses).
 /// @throws DeclarationError for the first violation, at the location given by §4 (line 1,

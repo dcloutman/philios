@@ -684,3 +684,122 @@
   `clang-tidy-18 -p build-tidy --checks='-*,cert-*,bugprone-*' --warnings-as-errors='*'` and the
   project-config run on both changed files: exit 0, no user-code diagnostics;
   `git diff --check` on both files clean.
+
+## Task 7 — Validator: static types stubs and preliminary tests (2026-11-24)
+- **Stubs:** none. Task 7 adds no public interface. `validator.hpp` and `validator.cpp` are
+  unchanged; the generator adds the static-type helpers and updates the `validateProgram`
+  documentation comment (§4.14.1).
+- **Earlier runs:** none found. `validator_test.cpp` had no Task 7 cases, and `Stub and tests`
+  was `Pending`.
+- **Test file changes** (`tests/unit/analysis/semantic_analyzer/validator_test.cpp`), all
+  additions; no existing test was changed:
+  - a header-comment paragraph and the includes `<cstddef>` and `<type_traits>`;
+  - a second file-local block with the five §5.3 static-type messages and a `StaticCase`
+    table row;
+  - 14 new `TEST_CASE`s appended after T3-SYM-5. They reuse `parseAndValidate`,
+    `checkDeclarationError`, and `kTrailingMain`. Each error case asserts the class, the line
+    and column, and the §5.3 message.
+- **Coverage map:**
+  - T3-ARCH-7: `static_assert` that `decltype(&validateProgram)` is `void (*)(const Program&)`.
+  - T3-DECL-6: all six initializers → `type mismatch` at the initializer.
+  - T3-DECL-7: four accepted subtypes validate.
+  - T3-DECL-9: six cases → `nullable value for non-nullable target`, each in a called and an
+    uncalled function. `let j: ?Integer = q()` and `let o: ?Object = n` validate. The dynamic
+    `let i: Integer = g()` through a `Function` parameter validates.
+  - T3-CONST-5:
+    - The first case is at `null` (3:9) with `constant value must not be null`.
+    - The second case follows DR-4 "target": at `n` (4:5) with `cannot assign to constant`.
+      The task text's "class only" wording predates the DR-4 resolution.
+  - T3-CONST-6: `n = r()`, `n = e()`, `n = echo("x")`, and `const m: ?String = r()` →
+    `constant value must not be null` at the right-hand side. `n = p` with `p: Object` validates.
+  - T3-ASSIGN-3: both cases → `type mismatch` at the right-hand side.
+  - T3-ASSIGN-7 (static parts): the `p = "b"` program and `p = null` on `?String` validate.
+    `p = 1` and `p = null` on `String` → `type mismatch`. `p = o` with `o: Object` validates.
+  - T3-SYM-3: `Object` and `?Object` targets → `symbol not allowed here` at the name. The
+    `Symbol`-variable widening program validates.
+  - T3-SYM-4: `echo(sym)`, `typeof(sym)`, `f(sym)`, `sym()`, `let i: Integer = sym`, and
+    `return sym` in a `Symbol` function → `symbol not allowed here`. `!sym` →
+    `operand of ! must be Boolean` (see the interpretation below).
+  - T3-OP-2: all nine operands → `operand of ! must be Boolean` at the operand (7:23), each in a
+    called and an uncalled function. The `?Object` parameter is named `o`, because `p` is the
+    `?Boolean` parameter.
+  - T3-LEX-5: `let b: Boolean = !-1` → `operand of ! must be Boolean` at `-1`.
+  - T3-EQ-2: the five pairs with `==` and `!=` (ten sections) validate.
+  - T3-MOD-9: `type mismatch` at 1:20, `symbol not allowed here` at 2:19, and
+    `operand of ! must be Boolean` at 1:21.
+- **Interpretation (developer may override):**
+  - For `!sym`, two §5.3 rows match:
+    - the `!` row, which lists "is a bare symbol";
+    - the general bare-symbol row.
+  - The tests use the more specific `!` row, so the message is `operand of ! must be Boolean`.
+    T3-OP-2 also lists `!sym` with the other `!` operand errors.
+  - The location (the `sym` name) is the same under either row.
+- **Build and test results (Debug, `build/`):**
+  - `cmake --build build`: pass. `validator_test.cpp` compiles warning-free.
+  - `philios_tests -# "[#validator_test]"`: 43 test cases, 489 assertions.
+    - 32 cases pass:
+      - all 29 existing cases (plans 0001 and 0002, and Task 6), unchanged;
+      - T3-ARCH-7, T3-DECL-7, and T3-EQ-2;
+      - the valid sections of the failing cases, and the DR-4 second case of T3-CONST-5,
+        which the Task 6 code already enforces.
+    - 11 cases fail, as expected before implementation: T3-DECL-6, T3-DECL-9, T3-CONST-5,
+      T3-CONST-6, T3-ASSIGN-3, T3-ASSIGN-7, T3-SYM-3, T3-SYM-4, T3-OP-2, T3-LEX-5, and T3-MOD-9.
+      - They have 58 failed assertions: DECL-6 6, DECL-9 12, CONST-5 1, CONST-6 4,
+        ASSIGN-3 2, ASSIGN-7 2, SYM-3 2, SYM-4 7, OP-2 18, LEX-5 1, MOD-9 3.
+      - Every failure is `expected a value`: validation accepted the source because the static
+        checks are not implemented yet.
+      - No failure is a `SyntaxError`, another declaration message, or an `InternalError`.
+  - All other unit tests: 149 test cases, 2141 assertions, all pass.
+  - `ctest --test-dir build`: 382/383. The only failing entry is the `philios_tests` binary,
+    because of the expected Task 7 failures above.
+  - `clang-tidy-18 -p build-tidy --checks='-*,cert-*,bugprone-*' --warnings-as-errors='*'` on
+    the test file: exit 0, with no diagnostics in user code.
+  - `git diff --check`: clean. No new line exceeds 100 columns. The only 101-column line is the
+    existing line, now at line 59.
+
+
+## Task 7 — Validator: static types implementation (2026-11-24)
+- Implemented Task 7 static-type validation in `validator.cpp` with no new public interface:
+  module/function identifier resolution now returns static type information (`Declared`, `Dynamic`,
+  or bare `Symbol` name), and local/module declared-type tables are tracked for constants,
+  parameters, and variables.
+- Added §4.10 rule checks for `let`/`const` initializers, assignment right-hand sides, module-level
+  const initializers, and `!` operands. Messages and locations match §5.3:
+  `type mismatch`, `nullable value for non-nullable target`,
+  `constant value must not be null`, and `operand of ! must be Boolean`.
+- Implemented bare-symbol placement rules (§4.9, D17, D18): bare symbol names are allowed only as
+  equality operands and as the whole RHS when the target type is `Symbol`/`?Symbol`; other
+  contexts report `symbol not allowed here`. For `!sym`, the validator reports
+  `operand of ! must be Boolean` at `sym` per the recorded Task 7 interpretation.
+- Preserved DA7 runtime-only sites: no new static checks were added for call-argument types,
+  return-value types, `echo` argument types, `typeof` argument types, or non-function callees,
+  beyond bare-symbol placement and `!` operand validation.
+- Updated `validator.hpp` `validateProgram` doc comment for AD1: static types are internal only,
+  validator returns `void`, produces no artifact, and writes nothing into the AST.
+- Verification completed for this implementation:
+  - `cmake --build build`
+  - `ctest --test-dir build --output-on-failure` (383/383)
+  - `cmake --build build-asan`
+  - `ctest --test-dir build-asan --output-on-failure` (383/383)
+  - `clang-tidy-18 -p build-tidy --checks='-*,cert-*,bugprone-*' --warnings-as-errors='*'`
+    `src/analysis/semantic_analyzer/validator.cpp`
+    `tests/unit/analysis/semantic_analyzer/validator_test.cpp`
+  - `git diff --check`
+
+## Task 7 — Revision for Round 1 finding (2026-11-24)
+
+- **Finding (Low):** `src/analysis/semantic_analyzer/validator.cpp` lines 455 and 477 used
+  34-space continuation indentation for the `FunctionContext& context, bool allowBareSymbol`
+  parameter line of the `validateExpressionInFunction` forward declaration and definition.
+- **Validity:** Confirmed. The style guide requires 4-space indentation, and `git diff HEAD`
+  shows both lines were added by Task 7 (not pre-existing).
+- **Fix:** Re-indented only those two continuation lines to align with the opening parenthesis
+  (40 spaces), matching the parameter-alignment style already used in the same file
+  (`collectFunctionScopeNames`, `resolveIdentifierInFunction`, `validateAssignTarget`). Both
+  lines are 88 columns. No other content changed.
+- **Gates (all passed):**
+  - `cmake --build build` — warning-free; `ctest --test-dir build` — 383/383 passed.
+  - `cmake --build build-asan`; `ctest --test-dir build-asan` — 383/383 passed.
+  - `clang-tidy -p build-tidy --checks='-*,cert-*,bugprone-*' --warnings-as-errors='*'`
+    `src/analysis/semantic_analyzer/validator.cpp` — clean.
+  - `git diff --check` — clean; no lines over 100 columns in `validator.cpp`.

@@ -3,6 +3,7 @@
 #include "common/errors.hpp"
 #include "frontend/ast/ast.hpp"
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -22,12 +23,19 @@ constexpr std::string_view kUndefinedIdentifier = "undefined identifier";
 constexpr std::string_view kMainName = "main may be used only as its declaration name";
 constexpr std::string_view kCannotAssignName = "cannot assign to this name";
 constexpr std::string_view kCannotAssignConstant = "cannot assign to constant";
+constexpr std::string_view kTypeMismatch = "type mismatch";
+constexpr std::string_view kNullableForNonNullable = "nullable value for non-nullable target";
+constexpr std::string_view kConstantNotNull = "constant value must not be null";
+constexpr std::string_view kNotOperandBoolean = "operand of ! must be Boolean";
+constexpr std::string_view kSymbolNotAllowed = "symbol not allowed here";
 
 struct ModuleNames {
     std::set<std::string_view, std::less<>> all;
     std::set<std::string_view, std::less<>> functions;
     std::set<std::string_view, std::less<>> constants;
     std::set<std::string_view, std::less<>> symbols;
+    std::map<std::string_view, const FunctionDecl*, std::less<>> functionDecls;
+    std::map<std::string_view, DeclaredType, std::less<>> constantTypes;
 };
 
 enum class LocalNameKind {
@@ -49,8 +57,72 @@ struct FunctionContext {
     std::set<std::string_view, std::less<>> allScopeNames;
     std::set<std::string_view, std::less<>> visibleNames;
     std::map<std::string_view, LocalNameKind, std::less<>> localKinds;
+    std::map<std::string_view, DeclaredType, std::less<>> localTypes;
     std::map<std::string_view, LocalConstantState, std::less<>> localConstants;
 };
+
+enum class StaticTypeKind {
+    Declared,
+    Dynamic,
+    SymbolName,
+};
+
+struct StaticType {
+    StaticTypeKind kind{StaticTypeKind::Dynamic};
+    DeclaredType declared{TypeName::Null, false};
+};
+
+enum class CheckMode {
+    General,
+    NonNullableTarget,
+    ConstantWrite,
+    NotOperand,
+};
+
+[[nodiscard]] DeclaredType symbolDeclaredType() {
+    return DeclaredType{TypeName::Symbol, false};
+}
+
+[[nodiscard]] std::uint8_t runtimeTypeMask(TypeName type) {
+    switch (type) {
+    case TypeName::Integer:
+        return 1U << 0U;
+    case TypeName::String:
+        return 1U << 1U;
+    case TypeName::Function:
+        return 1U << 2U;
+    case TypeName::Null:
+        return 1U << 3U;
+    case TypeName::Object:
+        return static_cast<std::uint8_t>((1U << 0U) | (1U << 1U) | (1U << 2U) | (1U << 4U) |
+                                         (1U << 5U));
+    case TypeName::Boolean:
+        return 1U << 4U;
+    case TypeName::Symbol:
+        return 1U << 5U;
+    }
+    throw InternalError("Validator: invalid TypeName");
+}
+
+[[nodiscard]] std::uint8_t declaredTypeMask(DeclaredType type) {
+    std::uint8_t mask = runtimeTypeMask(type.base);
+    if (type.nullable) {
+        mask = static_cast<std::uint8_t>(mask | runtimeTypeMask(TypeName::Null));
+    }
+    return mask;
+}
+
+[[nodiscard]] StaticType staticTypeFromDeclared(DeclaredType type) {
+    return StaticType{StaticTypeKind::Declared, type};
+}
+
+[[nodiscard]] StaticType staticTypeDynamic() {
+    return StaticType{StaticTypeKind::Dynamic, DeclaredType{TypeName::Null, false}};
+}
+
+[[nodiscard]] StaticType staticTypeSymbolName() {
+    return StaticType{StaticTypeKind::SymbolName, DeclaredType{TypeName::Null, false}};
+}
 
 [[nodiscard]] DeclaredType declaredReturnType(const FunctionDecl& function) {
     if (function.name() == "main") {
@@ -140,12 +212,18 @@ void collectModuleNames(const Program& program, ModuleNames& names) {
         names.all.insert(name);
 
         switch (item->kind()) {
-        case NodeKind::FunctionDecl:
+        case NodeKind::FunctionDecl: {
+            const auto& function = static_cast<const FunctionDecl&>(*item);
             names.functions.insert(name);
+            names.functionDecls.insert({name, &function});
             break;
-        case NodeKind::ConstDecl:
+        }
+        case NodeKind::ConstDecl: {
+            const auto& declaration = static_cast<const ConstDecl&>(*item);
             names.constants.insert(name);
+            names.constantTypes.insert({name, declaration.type()});
             break;
+        }
         case NodeKind::SymbolDecl:
             names.symbols.insert(name);
             break;
@@ -197,6 +275,7 @@ void collectFunctionScopeNames(const FunctionDecl& function, const ModuleNames& 
         context.allScopeNames.insert(parameter->name());
         context.visibleNames.insert(parameter->name());
         context.localKinds.insert({parameter->name(), LocalNameKind::Parameter});
+        context.localTypes.insert({parameter->name(), parameter->type()});
     }
 
     for (const auto& statement : function.body().statements()) {
@@ -248,63 +327,199 @@ void collectFunctionScopeNames(const FunctionDecl& function, const ModuleNames& 
     }
 }
 
-void validateExpressionInFunction(const ASTNode& expression, FunctionContext& context);
+struct ResolvedIdentifier {
+    StaticType type;
+    bool isModuleFunction{false};
+};
 
-void validateIdentifierInFunction(const Identifier& identifier, const FunctionContext& context) {
+[[nodiscard]] const FunctionDecl& lookupModuleFunction(std::string_view name,
+                                                       const ModuleNames& moduleNames) {
+    const auto function = moduleNames.functionDecls.find(name);
+    if (function == moduleNames.functionDecls.end() || function->second == nullptr) {
+        throw InternalError("Validator: missing module function declaration");
+    }
+    return *function->second;
+}
+
+[[nodiscard]] ResolvedIdentifier resolveIdentifierInFunction(const Identifier& identifier,
+                                                             const FunctionContext& context,
+                                                             bool allowBareSymbol) {
     const std::string_view name = identifier.name();
     if (name == "main") {
         throw DeclarationError(identifier.location(), std::string(kMainName));
     }
+
     if (context.visibleNames.contains(name)) {
-        return;
+        const auto localKind = context.localKinds.find(name);
+        if (localKind == context.localKinds.end()) {
+            throw InternalError("Validator: missing local binding kind");
+        }
+        switch (localKind->second) {
+        case LocalNameKind::Parameter:
+        case LocalNameKind::Variable:
+        case LocalNameKind::Constant: {
+            const auto type = context.localTypes.find(name);
+            if (type == context.localTypes.end()) {
+                throw InternalError("Validator: missing local declared type");
+            }
+            return ResolvedIdentifier{staticTypeFromDeclared(type->second), false};
+        }
+        case LocalNameKind::Symbol:
+            if (!allowBareSymbol) {
+                throw DeclarationError(identifier.location(), std::string(kSymbolNotAllowed));
+            }
+            return ResolvedIdentifier{staticTypeSymbolName(), false};
+        }
+        throw InternalError("Validator: invalid local binding kind");
     }
+
     if (context.allScopeNames.contains(name)) {
         throw DeclarationError(identifier.location(), std::string(kUsedBeforeDeclaration));
     }
-    if (context.moduleNames->all.contains(name)) {
-        return;
+
+    const auto moduleConstant = context.moduleNames->constantTypes.find(name);
+    if (moduleConstant != context.moduleNames->constantTypes.end()) {
+        return ResolvedIdentifier{staticTypeFromDeclared(moduleConstant->second), false};
     }
+
+    if (context.moduleNames->symbols.contains(name)) {
+        if (!allowBareSymbol) {
+            throw DeclarationError(identifier.location(), std::string(kSymbolNotAllowed));
+        }
+        return ResolvedIdentifier{staticTypeSymbolName(), false};
+    }
+
+    if (context.moduleNames->functions.contains(name)) {
+        return ResolvedIdentifier{staticTypeFromDeclared(DeclaredType{TypeName::Function, false}),
+                                  true};
+    }
+
     throw DeclarationError(identifier.location(), std::string(kUndefinedIdentifier));
 }
 
-void validateCallInFunction(const CallExpr& call, FunctionContext& context) {
-    validateIdentifierInFunction(call.callee(), context);
+void checkTypeAgainstDeclared(const StaticType& sourceType, SourceLocation sourceLocation,
+                              DeclaredType expectedType, CheckMode mode, bool allowBareSymbol) {
+    if (sourceType.kind == StaticTypeKind::Dynamic) {
+        return;
+    }
+
+    DeclaredType effectiveSource{TypeName::Null, false};
+    if (sourceType.kind == StaticTypeKind::SymbolName) {
+        if (!allowBareSymbol) {
+            if (mode == CheckMode::NotOperand) {
+                throw DeclarationError(sourceLocation, std::string(kNotOperandBoolean));
+            }
+            throw DeclarationError(sourceLocation, std::string(kSymbolNotAllowed));
+        }
+        effectiveSource = symbolDeclaredType();
+    } else {
+        effectiveSource = sourceType.declared;
+    }
+
+    if (mode == CheckMode::ConstantWrite &&
+        (effectiveSource.nullable || effectiveSource.base == TypeName::Null)) {
+        throw DeclarationError(sourceLocation, std::string(kConstantNotNull));
+    }
+
+    const std::uint8_t sourceMask = declaredTypeMask(effectiveSource);
+    const std::uint8_t expectedMask = declaredTypeMask(expectedType);
+
+    if ((sourceMask & static_cast<std::uint8_t>(~expectedMask)) == 0) {
+        return;
+    }
+
+    if ((sourceMask & expectedMask) == 0) {
+        if (mode == CheckMode::NotOperand) {
+            throw DeclarationError(sourceLocation, std::string(kNotOperandBoolean));
+        }
+        throw DeclarationError(sourceLocation, std::string(kTypeMismatch));
+    }
+
+    if (mode == CheckMode::NotOperand) {
+        if (effectiveSource.nullable) {
+            throw DeclarationError(sourceLocation, std::string(kNotOperandBoolean));
+        }
+        return;
+    }
+
+    if (mode == CheckMode::NonNullableTarget && effectiveSource.nullable) {
+        throw DeclarationError(sourceLocation, std::string(kNullableForNonNullable));
+    }
+
+    if (mode == CheckMode::ConstantWrite && effectiveSource.nullable) {
+        throw DeclarationError(sourceLocation, std::string(kConstantNotNull));
+    }
+}
+
+StaticType validateExpressionInFunction(const ASTNode& expression,
+                                        FunctionContext& context, bool allowBareSymbol);
+
+[[nodiscard]] StaticType validateCallInFunction(const CallExpr& call, FunctionContext& context) {
+    const ResolvedIdentifier callee =
+        resolveIdentifierInFunction(call.callee(), context, false);
+
     for (const auto& argument : call.arguments()) {
         if (!argument) {
             throw InternalError("Validator: null call argument");
         }
-        validateExpressionInFunction(*argument, context);
+        validateExpressionInFunction(*argument, context, false);
     }
+
+    if (callee.isModuleFunction) {
+        const FunctionDecl& function =
+            lookupModuleFunction(call.callee().name(), *context.moduleNames);
+        return staticTypeFromDeclared(declaredReturnType(function));
+    }
+    return staticTypeDynamic();
 }
 
-void validateExpressionInFunction(const ASTNode& expression, FunctionContext& context) {
+StaticType validateExpressionInFunction(const ASTNode& expression,
+                                        FunctionContext& context, bool allowBareSymbol) {
     switch (expression.kind()) {
     case NodeKind::IntegerLiteral:
+        return staticTypeFromDeclared(DeclaredType{TypeName::Integer, false});
     case NodeKind::StringLiteral:
+        return staticTypeFromDeclared(DeclaredType{TypeName::String, false});
     case NodeKind::NullLiteral:
+        return staticTypeFromDeclared(DeclaredType{TypeName::Null, false});
     case NodeKind::BooleanLiteral:
-        return;
+        return staticTypeFromDeclared(DeclaredType{TypeName::Boolean, false});
     case NodeKind::Identifier:
-        validateIdentifierInFunction(static_cast<const Identifier&>(expression), context);
-        return;
+        return resolveIdentifierInFunction(static_cast<const Identifier&>(expression), context,
+                                           allowBareSymbol)
+            .type;
     case NodeKind::CallExpr:
-        validateCallInFunction(static_cast<const CallExpr&>(expression), context);
-        return;
+        return validateCallInFunction(static_cast<const CallExpr&>(expression), context);
     case NodeKind::EchoCall:
-        validateExpressionInFunction(static_cast<const EchoCall&>(expression).argument(), context);
-        return;
+        validateExpressionInFunction(static_cast<const EchoCall&>(expression).argument(), context,
+                                     false);
+        return staticTypeFromDeclared(DeclaredType{TypeName::Null, false});
     case NodeKind::TypeofCall:
         validateExpressionInFunction(static_cast<const TypeofCall&>(expression).argument(),
-                                     context);
-        return;
-    case NodeKind::UnaryExpr:
-        validateExpressionInFunction(static_cast<const UnaryExpr&>(expression).operand(), context);
-        return;
+                                     context, false);
+        return staticTypeFromDeclared(DeclaredType{TypeName::String, false});
+    case NodeKind::UnaryExpr: {
+        const auto& unary = static_cast<const UnaryExpr&>(expression);
+        switch (unary.op()) {
+        case UnaryOperator::Not:
+            checkTypeAgainstDeclared(
+                validateExpressionInFunction(unary.operand(), context, true),
+                unary.operand().location(), DeclaredType{TypeName::Boolean, false},
+                CheckMode::NotOperand, false);
+            return staticTypeFromDeclared(DeclaredType{TypeName::Boolean, false});
+        }
+        throw InternalError("Validator: invalid unary operator");
+    }
     case NodeKind::BinaryExpr: {
         const auto& binary = static_cast<const BinaryExpr&>(expression);
-        validateExpressionInFunction(binary.left(), context);
-        validateExpressionInFunction(binary.right(), context);
-        return;
+        switch (binary.op()) {
+        case BinaryOperator::Equal:
+        case BinaryOperator::NotEqual:
+            validateExpressionInFunction(binary.left(), context, true);
+            validateExpressionInFunction(binary.right(), context, true);
+            return staticTypeFromDeclared(DeclaredType{TypeName::Boolean, false});
+        }
+        throw InternalError("Validator: invalid binary operator");
     }
     case NodeKind::FunctionDecl:
     case NodeKind::Param:
@@ -321,7 +536,14 @@ void validateExpressionInFunction(const ASTNode& expression, FunctionContext& co
     throw InternalError("Validator: invalid expression node kind");
 }
 
-void validateAssignTarget(const AssignStmt& assign, FunctionContext& context) {
+struct AssignmentCheck {
+    DeclaredType targetType{TypeName::Null, false};
+    CheckMode mode{CheckMode::General};
+    bool allowBareSymbol{false};
+};
+
+[[nodiscard]] AssignmentCheck validateAssignTarget(const AssignStmt& assign,
+                                                   FunctionContext& context) {
     const std::string_view name = assign.name();
     if (name == "main") {
         throw DeclarationError(assign.location(), std::string(kMainName));
@@ -335,8 +557,16 @@ void validateAssignTarget(const AssignStmt& assign, FunctionContext& context) {
 
         switch (localKind->second) {
         case LocalNameKind::Parameter:
-        case LocalNameKind::Variable:
-            return;
+        case LocalNameKind::Variable: {
+            const auto type = context.localTypes.find(name);
+            if (type == context.localTypes.end()) {
+                throw InternalError("Validator: missing local declared type");
+            }
+            return AssignmentCheck{type->second,
+                                   type->second.nullable ? CheckMode::General
+                                                         : CheckMode::NonNullableTarget,
+                                   type->second.base == TypeName::Symbol};
+        }
         case LocalNameKind::Symbol:
             throw DeclarationError(assign.location(), std::string(kCannotAssignName));
         case LocalNameKind::Constant: {
@@ -347,8 +577,13 @@ void validateAssignTarget(const AssignStmt& assign, FunctionContext& context) {
             if (!constant->second.nullable || constant->second.assigned) {
                 throw DeclarationError(assign.location(), std::string(kCannotAssignConstant));
             }
+            const auto type = context.localTypes.find(name);
+            if (type == context.localTypes.end()) {
+                throw InternalError("Validator: missing local declared type");
+            }
             constant->second.assigned = true;
-            return;
+            return AssignmentCheck{type->second, CheckMode::ConstantWrite,
+                                   type->second.base == TypeName::Symbol};
         }
         }
         throw InternalError("Validator: invalid local binding kind");
@@ -389,7 +624,7 @@ void validateStatements(const Block& block, FunctionContext& context) {
                                            "bare return is not allowed in this function");
                 }
             } else {
-                validateExpressionInFunction(*value, context);
+                validateExpressionInFunction(*value, context, false);
             }
             sawReturn = true;
             break;
@@ -398,7 +633,7 @@ void validateStatements(const Block& block, FunctionContext& context) {
             break;
         case NodeKind::ExprStmt: {
             const auto& exprStmt = static_cast<const ExprStmt&>(*statement);
-            validateExpressionInFunction(exprStmt.expression(), context);
+            validateExpressionInFunction(exprStmt.expression(), context, false);
             break;
         }
         case NodeKind::LetDecl: {
@@ -407,10 +642,19 @@ void validateStatements(const Block& block, FunctionContext& context) {
                 throw DeclarationError(declaration.location(), std::string(kInitializerRequired));
             }
             if (declaration.initializer() != nullptr) {
-                validateExpressionInFunction(*declaration.initializer(), context);
+                const CheckMode checkMode = declaration.type().nullable
+                                                ? CheckMode::General
+                                                : CheckMode::NonNullableTarget;
+                const bool allowBareSymbol = declaration.type().base == TypeName::Symbol;
+                checkTypeAgainstDeclared(
+                    validateExpressionInFunction(*declaration.initializer(), context,
+                                                 allowBareSymbol),
+                    declaration.initializer()->location(), declaration.type(), checkMode,
+                    allowBareSymbol);
             }
             context.visibleNames.insert(declaration.name());
             context.localKinds.insert({declaration.name(), LocalNameKind::Variable});
+            context.localTypes.insert({declaration.name(), declaration.type()});
             break;
         }
         case NodeKind::ConstDecl: {
@@ -419,10 +663,24 @@ void validateStatements(const Block& block, FunctionContext& context) {
                 throw DeclarationError(declaration.location(), std::string(kInitializerRequired));
             }
             if (declaration.initializer() != nullptr) {
-                validateExpressionInFunction(*declaration.initializer(), context);
+                const bool isNullableNullInitializer =
+                    declaration.type().nullable &&
+                    declaration.initializer()->kind() == NodeKind::NullLiteral;
+                if (!isNullableNullInitializer) {
+                    const CheckMode checkMode = declaration.type().nullable
+                                                    ? CheckMode::ConstantWrite
+                                                    : CheckMode::NonNullableTarget;
+                    const bool allowBareSymbol = declaration.type().base == TypeName::Symbol;
+                    checkTypeAgainstDeclared(
+                        validateExpressionInFunction(*declaration.initializer(), context,
+                                                     allowBareSymbol),
+                        declaration.initializer()->location(), declaration.type(), checkMode,
+                        allowBareSymbol);
+                }
             }
             context.visibleNames.insert(declaration.name());
             context.localKinds.insert({declaration.name(), LocalNameKind::Constant});
+            context.localTypes.insert({declaration.name(), declaration.type()});
             context.localConstants.insert(
                 {declaration.name(),
                  LocalConstantState{declaration.type().nullable,
@@ -439,8 +697,11 @@ void validateStatements(const Block& block, FunctionContext& context) {
         }
         case NodeKind::AssignStmt: {
             const auto& assign = static_cast<const AssignStmt&>(*statement);
-            validateAssignTarget(assign, context);
-            validateExpressionInFunction(assign.value(), context);
+            const AssignmentCheck assignment = validateAssignTarget(assign, context);
+            checkTypeAgainstDeclared(
+                validateExpressionInFunction(assign.value(), context, assignment.allowBareSymbol),
+                assign.value().location(), assignment.targetType, assignment.mode,
+                assignment.allowBareSymbol);
             break;
         }
         case NodeKind::FunctionDecl:
@@ -485,17 +746,28 @@ void validateFunction(const FunctionDecl& function, const ModuleNames& moduleNam
     validateStatements(function.body(), context);
 }
 
-void validateIdentifierInModuleInitializer(const Identifier& identifier,
-                                           const ModuleNames& moduleNames,
-                                           const std::set<std::string_view, std::less<>>&
-                                               visibleModuleValues) {
+[[nodiscard]] StaticType resolveIdentifierInModuleInitializer(
+    const Identifier& identifier, const ModuleNames& moduleNames,
+    const std::set<std::string_view, std::less<>>& visibleModuleValues, bool allowBareSymbol) {
     const std::string_view name = identifier.name();
     if (name == "main") {
         throw DeclarationError(identifier.location(), std::string(kMainName));
     }
+
     if (visibleModuleValues.contains(name)) {
-        return;
+        if (moduleNames.symbols.contains(name)) {
+            if (!allowBareSymbol) {
+                throw DeclarationError(identifier.location(), std::string(kSymbolNotAllowed));
+            }
+            return staticTypeSymbolName();
+        }
+        const auto type = moduleNames.constantTypes.find(name);
+        if (type == moduleNames.constantTypes.end()) {
+            throw InternalError("Validator: missing module constant declared type");
+        }
+        return staticTypeFromDeclared(type->second);
     }
+
     if (moduleNames.constants.contains(name) || moduleNames.symbols.contains(name)) {
         throw DeclarationError(identifier.location(), std::string(kUsedBeforeDeclaration));
     }
@@ -505,28 +777,47 @@ void validateIdentifierInModuleInitializer(const Identifier& identifier,
     throw DeclarationError(identifier.location(), std::string(kUndefinedIdentifier));
 }
 
-void validateModuleInitializerExpression(const ASTNode& expression, const ModuleNames& moduleNames,
-                                        const std::set<std::string_view, std::less<>>&
-                                            visibleModuleValues) {
+StaticType validateModuleInitializerExpression(
+    const ASTNode& expression, const ModuleNames& moduleNames,
+    const std::set<std::string_view, std::less<>>& visibleModuleValues, bool allowBareSymbol) {
     switch (expression.kind()) {
     case NodeKind::IntegerLiteral:
+        return staticTypeFromDeclared(DeclaredType{TypeName::Integer, false});
     case NodeKind::StringLiteral:
+        return staticTypeFromDeclared(DeclaredType{TypeName::String, false});
     case NodeKind::NullLiteral:
+        return staticTypeFromDeclared(DeclaredType{TypeName::Null, false});
     case NodeKind::BooleanLiteral:
-        return;
+        return staticTypeFromDeclared(DeclaredType{TypeName::Boolean, false});
     case NodeKind::Identifier:
-        validateIdentifierInModuleInitializer(static_cast<const Identifier&>(expression),
-                                              moduleNames, visibleModuleValues);
-        return;
-    case NodeKind::UnaryExpr:
-        validateModuleInitializerExpression(static_cast<const UnaryExpr&>(expression).operand(),
-                                            moduleNames, visibleModuleValues);
-        return;
+        return resolveIdentifierInModuleInitializer(static_cast<const Identifier&>(expression),
+                                                    moduleNames, visibleModuleValues,
+                                                    allowBareSymbol);
+    case NodeKind::UnaryExpr: {
+        const auto& unary = static_cast<const UnaryExpr&>(expression);
+        switch (unary.op()) {
+        case UnaryOperator::Not:
+            checkTypeAgainstDeclared(
+                validateModuleInitializerExpression(unary.operand(), moduleNames,
+                                                    visibleModuleValues, true),
+                unary.operand().location(), DeclaredType{TypeName::Boolean, false},
+                CheckMode::NotOperand, false);
+            return staticTypeFromDeclared(DeclaredType{TypeName::Boolean, false});
+        }
+        throw InternalError("Validator: invalid unary operator");
+    }
     case NodeKind::BinaryExpr: {
         const auto& binary = static_cast<const BinaryExpr&>(expression);
-        validateModuleInitializerExpression(binary.left(), moduleNames, visibleModuleValues);
-        validateModuleInitializerExpression(binary.right(), moduleNames, visibleModuleValues);
-        return;
+        switch (binary.op()) {
+        case BinaryOperator::Equal:
+        case BinaryOperator::NotEqual:
+            validateModuleInitializerExpression(binary.left(), moduleNames, visibleModuleValues,
+                                                true);
+            validateModuleInitializerExpression(binary.right(), moduleNames, visibleModuleValues,
+                                                true);
+            return staticTypeFromDeclared(DeclaredType{TypeName::Boolean, false});
+        }
+        throw InternalError("Validator: invalid binary operator");
     }
     case NodeKind::CallExpr:
     case NodeKind::EchoCall:
@@ -553,8 +844,19 @@ void validateModuleConst(const ConstDecl& declaration, const ModuleNames& module
         throw DeclarationError(declaration.location(), std::string(kInitializerRequired));
     }
     if (declaration.initializer() != nullptr) {
-        validateModuleInitializerExpression(*declaration.initializer(), moduleNames,
-                                            visibleModuleValues);
+        const bool isNullableNullInitializer =
+            declaration.type().nullable &&
+            declaration.initializer()->kind() == NodeKind::NullLiteral;
+        if (!isNullableNullInitializer) {
+            const CheckMode checkMode = declaration.type().nullable ? CheckMode::ConstantWrite
+                                                                    : CheckMode::NonNullableTarget;
+            const bool allowBareSymbol = declaration.type().base == TypeName::Symbol;
+            checkTypeAgainstDeclared(
+                validateModuleInitializerExpression(*declaration.initializer(), moduleNames,
+                                                    visibleModuleValues, allowBareSymbol),
+                declaration.initializer()->location(), declaration.type(), checkMode,
+                allowBareSymbol);
+        }
     }
 }
 

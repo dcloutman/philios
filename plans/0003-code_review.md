@@ -273,3 +273,111 @@ The complete read-only Git diff for all Task 6 files was audited. `validator.hpp
 ### Verdict
 
 **NO-GO**
+
+## Task 6 — Validator: scopes and names — Round 2
+
+- **Date:** 2026-11-24
+- **Confirmed plan ID:** `0003`
+- **Confirmed plan path:** `plans/0003.md`
+- **Task number:** `6` (Validator: scopes and names, plan T6)
+- **Reviewed files:** `src/analysis/semantic_analyzer/validator.cpp`, `tests/unit/analysis/semantic_analyzer/validator_test.cpp` (`validator.hpp` remains untouched)
+
+### Findings
+
+No Critical, High, Medium, or Low findings. No actionable revision items remain.
+
+### Round 1 finding resolution
+
+1. **Resolved (Medium):** `collectModuleNames()` now rejects module-level `const main` and `symbol main` at the declaration name with `main may be used only as its declaration name`, before missing-main or duplicate handling. The focused test covers each kind without a `main` function and before and after a valid `function main`, asserting class, exact location, and message.
+2. **Resolved (Low):** Both Task 6 source lines formerly over 100 columns are wrapped. No new Task 6 line exceeds 100 columns; the sole reported 101-column test line predates Task 6 and is unchanged.
+3. **Resolved (Low):** The test-helper comment now describes an unexpected `InternalError` and no longer claims a validator path is unimplemented.
+
+### Scope and preservation audit
+
+The complete read-only Git diff for both Task 6 changed files was re-audited. The Round 1 revisions are limited to the required module-level `main` rule, focused regression coverage, wrapping the two identified lines, and correcting the stale comment. The full Task 6 implementation remains within its declared scope, preserves DR-1(a) and DR-4 (`target`), and does not implement Task 7 static-type rules. No unauthorized deletion, move, rename, reorder, regrouping, re-indentation, reformatting, or documentation-placeholder removal was found. No requirement, API-contract, RAII/lifetime, const-correctness, or guideline regression was found.
+
+### Gate results
+
+- `cmake --build build`: passed, warning-free.
+- `ctest --test-dir build --output-on-failure`: 383/383 passed.
+- `cmake --build build-asan`: passed, warning-free.
+- `ctest --test-dir build-asan --output-on-failure`: 383/383 passed; no sanitizer failure.
+- `clang-tidy-18 -p build-tidy` on both changed files: passed with no user-code diagnostics and exit code 0; project configuration enables `cert-*`, `bugprone-*`, and warnings as errors.
+- Task 6-scoped `git diff --check`: passed. Repository-wide diff checking reported only unrelated trailing whitespace in `.github/agents/optimize-measure.agent.md:5`; no Task 6 file was reported.
+
+### Verdict
+
+**GO**
+
+
+## Task 7 — Validator: static types — Round 1
+
+- **Date:** 2026-11-26
+- **Confirmed plan ID:** `0003`
+- **Confirmed plan path:** `plans/0003.md`
+- **Task number:** `7` (Validator: static types, plan T7)
+- **Reviewed files:** `src/analysis/semantic_analyzer/validator.hpp`, `src/analysis/semantic_analyzer/validator.cpp`, `tests/unit/analysis/semantic_analyzer/validator_test.cpp`
+
+### Findings
+
+1. **Low — `src/analysis/semantic_analyzer/validator.cpp:455,477` — The Task 7 forward declaration and definition use 34-space continuation indentation.** This violates the style guide’s 4-space indentation rule and leaves the two declarations formatted inconsistently with project layout. **Required fix:** re-indent only the `FunctionContext& context` continuation lines using the project’s normal four-space continuation or parameter alignment, without reformatting unrelated code.
+
+No functional, API-contract, RAII/lifetime, ownership, or const-correctness defect was found. Static typing remains internal, the AST is not modified, dynamic sites remain runtime checked, and call-argument, return-value, `echo`-argument, and callee type checks were not made static under DA7. Bare-symbol handling, including the authoritative `!sym` diagnostic, and DR-4 (`target`) are correct. Task 6 behavior remains intact.
+
+### Test coverage
+
+Every required ID is present: T3-DECL-6/-7/-9, T3-CONST-5/-6, T3-ASSIGN-3/-7, T3-SYM-3/-4, T3-OP-2, T3-EQ-2, T3-MOD-9, T3-ARCH-7, and T3-LEX-5. Error cases assert declaration class, exact location, and message; accepted/runtime-deferred cases assert validation succeeds. T3-CONST-5’s second case correctly asserts `cannot assign to constant` at target `n` per DR-4.
+
+### Scope and preservation audit
+
+The complete read-only `git diff HEAD` for all three Task 7 files was audited. The Task 6 Round 2 revisions in the same diff are limited to the already-reviewed module-level `main` fix, two line wraps, stale-comment correction, and focused tests. Task 7’s remaining changes add only the required internal type model, checks, AD1 documentation, and appended tests. All replaced Task 6 validator lines are necessary to return static types or carry declared-type data. No unauthorized deletion, move, rename, reorder, regrouping, re-indentation, reformatting, or documentation-placeholder removal was found; there is no High preservation finding.
+
+### Gate results
+
+- `cmake --build build`: passed, warning-free.
+- `ctest --test-dir build --output-on-failure`: 383/383 passed.
+- `cmake --build build-asan`: passed, warning-free.
+- `ctest --test-dir build-asan --output-on-failure`: 383/383 passed; no sanitizer failure.
+- `cmake --build build-tidy`: passed; the configured `cert-*`, `bugprone-*`, warnings-as-errors checks ran on both changed `.cpp` files with no diagnostics.
+- `git diff HEAD --check`: passed.
+- New-line 100-column check: passed. The sole 101-column line in the task files predates `HEAD` and is not a Task 7 finding.
+- `clang-format --dry-run --Werror`: unavailable because `clang-format` is not installed; this was not a required gate, and style was reviewed manually.
+
+### Verdict
+
+**NO-GO**
+
+## Task 7 — Validator: static types — Round 2
+
+- **Date:** 2026-11-26
+- **Confirmed plan ID:** `0003`
+- **Confirmed plan path:** `plans/0003.md`
+- **Task number:** `7` (Validator: static types, plan T7)
+- **Reviewed files:** `src/analysis/semantic_analyzer/validator.hpp`, `src/analysis/semantic_analyzer/validator.cpp`, `tests/unit/analysis/semantic_analyzer/validator_test.cpp`
+
+### Findings
+
+No Critical, High, Medium, or Low findings. No actionable revision items remain.
+
+### Round 1 finding resolution
+
+1. **Resolved (Low):** The continuation lines at `validator.cpp:455,477` now use 40 spaces, aligning `FunctionContext& context` beneath the opening parenthesis. Both lines are 88 columns and match the established multi-line declaration style and the style guide 4-space/alignment rule. The revision record identifies only these two indentation changes; no unrelated source or test revision was introduced.
+
+### Scope and preservation audit
+
+The complete read-only `git diff HEAD` for all three Task 7 files was re-audited. Task 7 remains within its declared static-type scope and satisfies its acceptance criteria without relying on incomplete unrelated tasks. DR-1 (`a`), DR-4 (`target`), AD1, DA7, and the authoritative `!sym` diagnostic remain respected. No new requirement, API-contract, RAII/lifetime, ownership, const-correctness, preservation, or guideline issue was found. No unauthorized deletion, move, rename, reorder, regrouping, reformatting, or documentation-placeholder removal was found.
+
+### Gate results
+
+- `cmake --build build`: passed, warning-free.
+- `ctest --test-dir build --output-on-failure`: 383/383 passed.
+- `cmake --build build-asan`: passed, warning-free.
+- `ctest --test-dir build-asan --output-on-failure`: 383/383 passed; no sanitizer failure.
+- `cmake --build build-tidy`: passed.
+- Explicit `clang-tidy-18 -p build-tidy` with `cert-*`, `bugprone-*`, and warnings as errors on both changed `.cpp` files: passed with no user-code diagnostics.
+- `git diff HEAD --check`: passed.
+- Changed-line 100-column check: passed. The sole 101-column line in the task files is unchanged at `validator_test.cpp:59` and predates Task 7.
+
+### Verdict
+
+**GO**

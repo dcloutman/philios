@@ -9,6 +9,10 @@
 // Plan 0003 (§4.5, §4.5.1, §4.6–§4.9, §5.3; task 6): scopes and names. Each error case checks the
 // class (`declaration`), the line and column, and the §5.3 message; each valid case checks that
 // validation succeeds.
+//
+// Plan 0003 (§4.7 rule 5, §4.9, §4.10, §4.11.1, §4.11.5, §4.14.1, §5.3; task 7): static types.
+// Error cases check the class, the line and column, and the §5.3 message; T3-ARCH-7 is a
+// compile-time check of the `validateProgram` signature (AD1).
 
 #include "analysis/semantic_analyzer/validator.hpp"
 #include "common/errors.hpp"
@@ -19,9 +23,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace philios::test {
 namespace {
@@ -515,6 +521,285 @@ TEST_CASE("T3-SYM-5 assignment to a symbol fails at the target (D14)") {
     SECTION("sym = sym") {
         checkDeclarationError("function main():\n    symbol sym\n    sym = sym\n",
                               SourceLocation{3, 5}, kCannotAssignName);
+    }
+}
+
+namespace {
+
+// Plan 0003 §5.3 static-type messages (task 7).
+constexpr std::string_view kTypeMismatch = "type mismatch";
+constexpr std::string_view kNullableForNonNullable = "nullable value for non-nullable target";
+constexpr std::string_view kConstantNotNull = "constant value must not be null";
+constexpr std::string_view kNotOperandBoolean = "operand of ! must be Boolean";
+constexpr std::string_view kSymbolNotAllowed = "symbol not allowed here";
+
+/// A source line under test, the expected column of its error, and a section name.
+struct StaticCase {
+    std::string_view name;
+    std::string_view line;
+    std::size_t column;
+};
+
+} // namespace
+
+TEST_CASE("T3-ARCH-7 validateProgram returns nothing and writes no artifact (AD1)") {
+    static_assert(std::is_same_v<decltype(&validateProgram), void (*)(const Program&)>);
+    SUCCEED();
+}
+
+TEST_CASE("T3-DECL-6 a static type disjoint from the declared type fails at the initializer") {
+    const std::string prefix = "function f(): Integer:\n    return 1\nfunction main():\n";
+    constexpr std::array<StaticCase, 6> cases{{
+        {"String to Integer", "    let x: Integer = \"a\"", 22},
+        {"null to Integer", "    let x: Integer = null", 22},
+        {"Integer to Boolean", "    let b: Boolean = 1", 22},
+        {"null to Object", "    let o: Object = null", 21},
+        {"Integer call to String", "    let s: String = f()", 21},
+        {"Boolean to Integer", "    let i: Integer = true", 22},
+    }};
+    for (const StaticCase& item : cases) {
+        DYNAMIC_SECTION(item.name) {
+            checkDeclarationError(prefix + std::string(item.line) + "\n",
+                                  SourceLocation{4, item.column}, kTypeMismatch);
+        }
+    }
+}
+
+TEST_CASE("T3-DECL-7 accepted subtypes validate") {
+    const std::string prefix = "function helper(): null:\n    pass\nfunction main():\n";
+    SECTION("Integer to Object") {
+        CHECK_NOTHROW(parseAndValidate(prefix + "    let o: Object = 1\n"));
+    }
+    SECTION("Boolean to ?Object") {
+        CHECK_NOTHROW(parseAndValidate(prefix + "    let o: ?Object = true\n"));
+    }
+    SECTION("function name to Function") {
+        CHECK_NOTHROW(parseAndValidate(prefix + "    let f2: Function = helper\n"));
+    }
+    SECTION("equality to Boolean") {
+        CHECK_NOTHROW(parseAndValidate(prefix + "    let b: Boolean = 1 == 2\n"));
+    }
+}
+
+TEST_CASE("T3-DECL-9 a nullable value for a non-nullable target fails at the right-hand side") {
+    // Lines 1-5; the statement under test starts on line 6.
+    const std::string prefix = "function q(): ?Integer:\n    return null\n"
+                               "function r(): ?Object:\n    return null\n"
+                               "function t(n: ?String, p: Integer): null:\n";
+    struct NullableCase {
+        std::string_view name;
+        std::string_view body;
+        SourceLocation location;
+    };
+    constexpr std::array<NullableCase, 6> cases{{
+        {"let Integer from ?Integer call", "    let i: Integer = q()\n", {6, 22}},
+        {"const Integer from ?Integer call", "    const k: Integer = q()\n", {6, 24}},
+        {"let Object from ?Object call", "    let o: Object = r()\n", {6, 21}},
+        {"let Object from ?String parameter", "    let o: Object = n\n", {6, 21}},
+        {"assignment to Integer let", "    let x: Integer = 1\n    x = q()\n", {7, 9}},
+        {"assignment to Integer parameter", "    p = q()\n", {6, 9}},
+    }};
+    for (const NullableCase& item : cases) {
+        DYNAMIC_SECTION(item.name << " in a called function") {
+            checkDeclarationError(prefix + std::string(item.body) +
+                                      "function main():\n    t(null, 1)\n",
+                                  item.location, kNullableForNonNullable);
+        }
+        DYNAMIC_SECTION(item.name << " in an uncalled function") {
+            checkDeclarationError(prefix + std::string(item.body) + std::string(kTrailingMain),
+                                  item.location, kNullableForNonNullable);
+        }
+    }
+    SECTION("nullable targets validate") {
+        CHECK_NOTHROW(parseAndValidate(prefix + "    let j: ?Integer = q()\n" +
+                                       "    let o: ?Object = n\n" + std::string(kTrailingMain)));
+    }
+    SECTION("a call through a Function parameter is dynamic and validates") {
+        CHECK_NOTHROW(parseAndValidate("function h(g: Function): null:\n"
+                                       "    let i: Integer = g()\n" +
+                                       std::string(kTrailingMain)));
+    }
+}
+
+TEST_CASE("T3-CONST-5 null written to a nullable constant fails (D8, DR-4)") {
+    SECTION("unassigned constant: at null") {
+        checkDeclarationError("function main():\n    const n: ?String\n    n = null\n",
+                              SourceLocation{3, 9}, kConstantNotNull);
+    }
+    SECTION("after an assignment: at the target (DR-4)") {
+        checkDeclarationError(
+            "function main():\n    const n: ?String\n    n = \"a\"\n    n = null\n",
+            SourceLocation{4, 5}, kCannotAssignConstant);
+    }
+}
+
+TEST_CASE("T3-CONST-6 a statically nullable constant write fails at the right-hand side (D15)") {
+    // Lines 1-5; the statement under test starts on line 6.
+    const std::string prefix = "function r(): ?String:\n    return null\n"
+                               "function e(): null:\n    pass\n"
+                               "function t(p: Object): null:\n";
+    const std::string declaration = "    const n: ?String\n"; // line 6
+    constexpr std::array<StaticCase, 3> writes{{
+        {"?String call", "    n = r()", 9},
+        {"null call", "    n = e()", 9},
+        {"echo", "    n = echo(\"x\")", 9},
+    }};
+    for (const StaticCase& item : writes) {
+        DYNAMIC_SECTION(item.name) {
+            checkDeclarationError(prefix + declaration + std::string(item.line) + "\n" +
+                                      std::string(kTrailingMain),
+                                  SourceLocation{7, item.column}, kConstantNotNull);
+        }
+    }
+    SECTION("initializer from a ?String call") {
+        checkDeclarationError(prefix + "    const m: ?String = r()\n" + std::string(kTrailingMain),
+                              SourceLocation{6, 24}, kConstantNotNull);
+    }
+    SECTION("an Object parameter validates") {
+        CHECK_NOTHROW(
+            parseAndValidate(prefix + declaration + "    n = p\n" + std::string(kTrailingMain)));
+    }
+}
+
+TEST_CASE("T3-ASSIGN-3 a disjoint assignment fails at the right-hand side") {
+    SECTION("String to Integer") {
+        checkDeclarationError("function main():\n    let x: Integer = 1\n    x = \"a\"\n",
+                              SourceLocation{3, 9}, kTypeMismatch);
+    }
+    SECTION("Integer to Boolean") {
+        checkDeclarationError("function main():\n    let b: Boolean = true\n    b = 1\n",
+                              SourceLocation{3, 9}, kTypeMismatch);
+    }
+}
+
+TEST_CASE("T3-ASSIGN-7 parameters are assignable and statically checked (DA2)") {
+    SECTION("assignment to a String parameter validates") {
+        CHECK_NOTHROW(parseAndValidate("function f(p: String): String:\n    p = \"b\"\n"
+                                       "    return p\n"
+                                       "function main():\n    let s: String = \"a\"\n"
+                                       "    f(s)\n    echo(s)\n"));
+    }
+    SECTION("null to a ?String parameter validates") {
+        CHECK_NOTHROW(parseAndValidate("function f(p: ?String): null:\n    p = null\n" +
+                                       std::string(kTrailingMain)));
+    }
+    SECTION("Integer to a String parameter") {
+        checkDeclarationError("function f(p: String): null:\n    p = 1\n" +
+                                  std::string(kTrailingMain),
+                              SourceLocation{2, 9}, kTypeMismatch);
+    }
+    SECTION("null to a String parameter") {
+        checkDeclarationError("function f(p: String): null:\n    p = null\n" +
+                                  std::string(kTrailingMain),
+                              SourceLocation{2, 9}, kTypeMismatch);
+    }
+    SECTION("an Object value to a String parameter validates") {
+        CHECK_NOTHROW(parseAndValidate("function f(p: String, o: Object): null:\n    p = o\n" +
+                                       std::string(kTrailingMain)));
+    }
+}
+
+TEST_CASE("T3-SYM-3 a bare symbol to an Object target fails at the name (D17)") {
+    const std::string prefix = "symbol philiosIsRad\nfunction main():\n";
+    SECTION("Object") {
+        checkDeclarationError(prefix + "    let o: Object = philiosIsRad\n",
+                              SourceLocation{3, 21}, kSymbolNotAllowed);
+    }
+    SECTION("?Object") {
+        checkDeclarationError(prefix + "    let o: ?Object = philiosIsRad\n",
+                              SourceLocation{3, 22}, kSymbolNotAllowed);
+    }
+    SECTION("a Symbol variable widens to Object") {
+        CHECK_NOTHROW(parseAndValidate(prefix + "    let s: Symbol = philiosIsRad\n"
+                                                "    let o: Object = s\n"
+                                                "    echo(typeof(o))\n"));
+    }
+}
+
+TEST_CASE("T3-SYM-4 a bare symbol outside the allowed contexts fails at the name (D18)") {
+    // Lines 1-4; the statement under test is on line 5.
+    const std::string prefix = "function f(x: Object): null:\n    pass\n"
+                               "function main():\n    symbol sym\n";
+    constexpr std::array<StaticCase, 5> cases{{
+        {"echo argument", "    echo(sym)", 10},
+        {"typeof argument", "    typeof(sym)", 12},
+        {"call argument", "    f(sym)", 7},
+        {"callee", "    sym()", 5},
+        {"Integer initializer", "    let i: Integer = sym", 22},
+    }};
+    for (const StaticCase& item : cases) {
+        DYNAMIC_SECTION(item.name) {
+            checkDeclarationError(prefix + std::string(item.line) + "\n",
+                                  SourceLocation{5, item.column}, kSymbolNotAllowed);
+        }
+    }
+    SECTION("return value in a Symbol function") {
+        checkDeclarationError("function g(): Symbol:\n    symbol sym\n    return sym\n" +
+                                  std::string(kTrailingMain),
+                              SourceLocation{3, 12}, kSymbolNotAllowed);
+    }
+    SECTION("operand of !") {
+        // The §5.3 `!` row names a bare-symbol operand explicitly.
+        checkDeclarationError(prefix + "    let b: Boolean = !sym\n", SourceLocation{5, 23},
+                              kNotOperandBoolean);
+    }
+}
+
+TEST_CASE("T3-OP-2 a non-Boolean or nullable ! operand fails at the operand") {
+    // Lines 1-6; the statement under test is on line 7.
+    const std::string prefix = "function f(): ?Boolean:\n    return null\n"
+                               "function g(): Integer:\n    return 1\n"
+                               "function t(p: ?Boolean, o: ?Object): null:\n    symbol sym\n";
+    constexpr std::array<std::string_view, 9> operands{"1", "\"a\"", "null", "-1", "f()",
+                                                       "p", "o", "g()", "sym"};
+    for (const std::string_view operand : operands) {
+        const std::string source =
+            prefix + "    let b: Boolean = !" + std::string(operand) + "\n"; // operand at 7:23
+        DYNAMIC_SECTION("!" << operand << " in a called function") {
+            checkDeclarationError(source + "function main():\n    t(null, null)\n",
+                                  SourceLocation{7, 23}, kNotOperandBoolean);
+        }
+        DYNAMIC_SECTION("!" << operand << " in an uncalled function") {
+            checkDeclarationError(source + std::string(kTrailingMain), SourceLocation{7, 23},
+                                  kNotOperandBoolean);
+        }
+    }
+}
+
+TEST_CASE("T3-LEX-5 !-1 is a declaration error at the negative literal") {
+    checkDeclarationError("function main():\n    let b: Boolean = !-1\n", SourceLocation{2, 23},
+                          kNotOperandBoolean);
+}
+
+TEST_CASE("T3-EQ-2 equality of differently typed operands passes validation") {
+    constexpr std::array<std::string_view, 5> pairs{
+        {"1 OP \"1\"", "null OP 0", "true OP 1", "\"\" OP null", "helper OP 1"}};
+    constexpr std::array<std::string_view, 2> operators{"==", "!="};
+    for (const std::string_view pair : pairs) {
+        for (const std::string_view op : operators) {
+            std::string expression(pair);
+            expression.replace(expression.find("OP"), 2, op);
+            DYNAMIC_SECTION(expression) {
+                CHECK_NOTHROW(parseAndValidate("function helper(): null:\n    pass\n"
+                                               "function main():\n    let b: Boolean = " +
+                                               expression + "\n"));
+            }
+        }
+    }
+}
+
+TEST_CASE("T3-MOD-9 static checks apply to module-level initializers") {
+    SECTION("type mismatch") {
+        checkDeclarationError("const x: Integer = \"a\"\n" + std::string(kTrailingMain),
+                              SourceLocation{1, 20}, kTypeMismatch);
+    }
+    SECTION("bare symbol to Object") {
+        checkDeclarationError("symbol s\nconst o: Object = s\n" + std::string(kTrailingMain),
+                              SourceLocation{2, 19}, kSymbolNotAllowed);
+    }
+    SECTION("! operand") {
+        checkDeclarationError("const b: Boolean = !1\n" + std::string(kTrailingMain),
+                              SourceLocation{1, 21}, kNotOperandBoolean);
     }
 }
 

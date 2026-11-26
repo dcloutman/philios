@@ -445,7 +445,7 @@ message.
   - Every-task gates pass.
 - **Stub and tests:** Done
 - **Implementation:** Done
-- **Review:** In progress
+- **Review:** GO
 - **Revision:** Done
 
 ## Task 7: Validator: static types
@@ -478,10 +478,10 @@ message.
 - **Acceptance criteria:**
   - All listed tests pass; existing validator tests pass unchanged.
   - Every-task gates pass.
-- **Stub and tests:** Pending
-- **Implementation:** Pending
-- **Review:** Pending
-- **Revision:** Not required
+- **Stub and tests:** Done
+- **Implementation:** Done
+- **Review:** GO
+- **Revision:** Done
 
 ## Task 8: Environment
 **Blocked by DR-1.**
@@ -515,7 +515,7 @@ message.
   - All listed tests pass; existing environment and call tests pass unchanged.
   - Every-task gates pass (subject to DR-1: `ConstantReassignment` is added by task 9 per the
     plan).
-- **Stub and tests:** Pending
+- **Stub and tests:** In progress
 - **Implementation:** Pending
 - **Review:** Pending
 - **Revision:** Not required
